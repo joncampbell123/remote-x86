@@ -1,0 +1,13 @@
+#!/usr/bin/perl
+my $file = shift @ARGV;
+my $sizeby = shift @ARGV;
+die unless -f $file;
+die unless -f $sizeby;
+die if -s $sizeby == 0;
+
+open(B,"+<",$file) || die;
+binmode(B);
+seek(B,512-4,0);
+print B pack("v",int((( -s $sizeby) + 511 ) / 512));
+close(B);
+

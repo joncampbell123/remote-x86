@@ -1,0 +1,42 @@
+Remote x86
+
+A debugging tool for computers to allow automated testing over
+a RS-232 or otherwise serial port.
+
+When booted from floppy, CD-ROM, etc. this image minimally sets
+up a kernel that communicates with a host over RS-232 and allows
+the host to peek/poke memory and upload/execute code.
+
+
+This remote control code is written in a somewhat modular fashion.
+"stage1" is responsible for loading the rest of the program, and
+"stage2" is the program.
+
+Stage1 therefore might be:
+  + Floppy disk loading code
+  + CD-ROM boot loading code
+  + USB pen drive/HDD loading code
+
+Stage2 itself is modular, representing each possible "mode" the
+CPU may execute in (part of testing is seeing how the CPU acts
+in various modes).
+
+  + base mode (8086/8088 16-bit real mode), REQUIRED
+  + 286 protected mode (16-bit), OPTIONAL, OFTEN OMITTED
+  + 386 protected mode (16-bit), OPTIONAL, OFTEN ATTACHED
+  + 386 protected mode (32-bit), OPTIONAL, OFTEN ATTACHED
+  + AMD64 long mode (64-bit), OPTIONAL, OFTEN OMITTED
+
+All modes refer to a common page for settings, and all act more
+or less the same. The difference is the CPU mode it executes in.
+
+The kernel is written to be stable, but to perform as minimal
+modification to the host as possible. For this reason, it doesn't
+touch the interrupt table, it doesn't touch very much else, it
+only touches the hardware necessary to do it's job. This makes
+it possible for the loader to be used as a memory snapshot
+program as well, since the previous contents are not cleared.
+
+You will need NASM. Some optional parts are written in C, if
+those parts are attached, you will need GCC as well.
+
