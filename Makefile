@@ -10,13 +10,16 @@ floppy.bin: floppy-raw.bin
 stage1-floppy.bin: stage1-floppy.asm
 	nasm -o $@ -f bin $<
 
-stage2.bin: stage2-8086.o stage2-286.o
+stage2.bin: stage2-8086.o stage2-286.o stage2-386-16.o
 	./assemble-stage2.sh
 
 stage2-8086.o: stage2-8086.asm
 	nasm -o $@ -f elf $<
 
 stage2-286.o: stage2-286.asm
+	nasm -o $@ -f elf $<
+
+stage2-386-16.o: stage2-386-16.asm
 	nasm -o $@ -f elf $<
 
 clean:

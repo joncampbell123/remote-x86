@@ -1,13 +1,18 @@
 
-IN_BUF_SIZE	equ		256
+IN_BUF_SIZE	equ			256
+GDT_ENTRIES	equ			32
 
-; stage1 executes us within our own segment, 16-bit real mode
-; when linked together, this must be FIRST!
+USER_CODE_SELECTOR	equ		0x20			; used by EXEC to run user code in it's own segment
+ACCESS_SELECTOR		equ		0x18			; used by READ/WRITE commands because 386 segments are limited to 64KB
+DATA_SELECTOR		equ		0x10
+CODE_SELECTOR		equ		0x08
+
+; this code is jumped to from the 8086 portion.
+; you'd better be running this on a 386 or higher because this makes no
+; attempt to detect whether the CPU actually supports the mode.
 ;
-; we're jumped to from stage 1 to 0x0000:0x8000. basing segments
-; from zero allows us to reference everything within the first
-; 64K absolutely, and also for the other parts like the 32-bit
-; protected mode part, to do absolute references to memory.
+; the 8086 portion took care of setting up the UART, we just continue to use it
+extern _jmp_8086
 
 ; known issues:
 ;
@@ -18,92 +23,12 @@ bits 16
 use16
 
 SECTION		.text
-global		_start
-
-BAUD_DIVISOR	equ		(115200/12)	; 9600
-
-; code starts here
-_start:		push		cs
-		pop		ds
-		push		cs
-		pop		es
-
-		cmp		byte [inited],0			; other modules may have jumped back to this location. if so, don't re-init everything
-		jz		_start_first_time
-		jmp		_main_loop
-
-_start_first_time:
-		inc		byte [inited]
-
-		mov		si,hello_msg
-		call		puts
-
-; ask which comport
-		mov		si,ask_comport
-		call		puts
-ask_loop:
-		xor		ax,ax
-		int		16h
-		cmp		al,'1'
-		jl		ask_loop
-		cmp		al,'4'
-		ja		ask_loop
-		sub		al,'1'
-		xor		ah,ah
-		mov		bx,ax
-		shl		bx,1
-		mov		ax,[comports + bx]
-		mov		word [comport],ax
-
-; announce which comport
-		mov		si,announcing_comport
-		call		puts
-		mov		ax,[comport]
-		call		puthex
-		mov		si,crlf
-		call		puts
-
-; setup the comport
-		mov		dx,[comport]
-		add		dx,3			; line control register
-		mov		al,0x80			; set DLAB
-		out		dx,al
-
-		mov		dx,[comport]		; DLAB low
-		mov		ax,BAUD_DIVISOR
-		out		dx,al
-		inc		dx
-		mov		cl,8			; remember this might run on an 8086 which doesn't have shr reg,imm
-		shr		ax,cl			; >>= 8
-		out		dx,al			; DLAB high
-
-		mov		dx,[comport]
-		add		dx,3			; line control register
-		mov		al,(1 << 3) | 3;	; odd parity 8 bits
-		out		dx,al
-
-		mov		dx,[comport]
-		inc		dx			; interrupt enable
-		xor		al,al			; set all bits to zero
-		out		dx,al
-
-		mov		dx,[comport]
-		add		dx,2			; FIFO control
-		xor		al,al			; set all bits to zero
-		out		dx,al
-
-		mov		dx,[comport]
-		add		dx,4			; modem control
-		xor		al,al			; set all bits to zero
-		out		dx,al
-
-		jmp		_main_loop
 
 ; main loop
 _main_loop:	cli					; keep interrupts disabled
 
-		push		cs
-		pop		es
+		mov		ax,DATA_SELECTOR
+		mov		es,ax
 
 		mov		bx,in_buf
 		xor		si,si			; BX+SI is used to index into in_buf
@@ -161,37 +86,11 @@ _main_loop_command:
 		call		_main_loop_command_write	; ..."WRITE"
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
-		call		_main_loop_command_286		; ..."286"
-		call		_main_loop_command_386_16	; ..."386-16"
 		call		_main_loop_command_8086		; ..."8086"
 
 ; we didn't understand the message
 		stc
 		ret
-
-; 386-16
-_main_loop_command_386_16:
-		cmp		word [si],'38'
-		jnz		.fail
-		cmp		word [si+2],'6-'
-		jnz		.fail
-		cmp		word [si+4],'16'
-		jnz		.fail
-		cmp		byte [si+6],0
-		jnz		.fail
-		jmp		_jmp_386_16
-.fail:		ret
-
-; 286
-_main_loop_command_286:
-		cmp		word [si],'28'
-		jnz		.fail
-		cmp		byte [si+2],'6'
-		jnz		.fail
-		cmp		byte [si+3],0
-		jnz		.fail
-		jmp		_jmp_286
-.fail:		ret
 
 ; 8086
 _main_loop_command_8086:
@@ -201,11 +100,29 @@ _main_loop_command_8086:
 		jnz		.fail
 		cmp		byte [si+4],0
 		jnz		.fail
-		jmp		_jmp_8086
+		; write CMOS memory to tell the BIOS we're doing a type 5 reset
+		mov		al,0Fh
+		out		70h,al
+		mov		al,5
+		out		71h,al				; CMOS[0xF] = 5
+		; switch the CPU back to real mode
+		lgdt		[cs:_gdtr_old]
+		lidt		[cs:_idtr_realmode]		; on a 386, we then load a sane IDT for real mode
+		mov		eax,cr0				; <- this will crash and fault a 386, which is intended
+		and		al,0xFE				; turn off protected mode
+		mov		cr0,eax
+		jmp		0x0000:.realmode
+		; real mode, reload sectors
+.realmode:	mov		ax,[_orig_cs]
+		mov		ds,ax
+		mov		es,ax
+		mov		ss,ax
+		jmp		0x0000:_jmp_8086
 .fail:		ret
 
 ; EXEC command
 ; EXEC <seg>:<off>
+;  in this case, the "segment" value is a byte offset where the code segment starts
 _main_loop_command_exec:
 		cmp		word [si],'EX'
 		jnz		.fail
@@ -215,8 +132,9 @@ _main_loop_command_exec:
 		jnz		.fail
 		add		si,5
 		pop		ax
-		call		strtohex			; AX = seg
-		mov		es,ax
+		call		strtohex_32			; DX:AX = seg
+		call		dx_ax_phys_to_386seg_code
+		mov		es,dx
 		call		str_skip_whitespace
 		call		strtohex
 		mov		bx,ax				; ES:BX = pointer to function
@@ -246,12 +164,8 @@ _main_loop_command_write:
 		add		si,6				; accpeded, skip to addr
 		pop		ax				; rip away return
 		call		strtohex_32			; addr -> DX:AX
-		cmp		dx,0x10
-		jb		.addrok
-		mov		si,address_invalid_msg
-		jmp		_main_loop_command_response_output_err
-.addrok:	call		str_skip_whitespace
-		call		dx_ax_phys_to_real
+		call		str_skip_whitespace
+		call		dx_ax_phys_to_386seg
 		mov		es,dx
 		mov		bx,ax
 
@@ -266,9 +180,7 @@ _main_loop_command_write:
 
 		inc		bx
 		jnc		.writeloop
-		mov		ax,es
-		add		ax,0x1000
-		mov		es,ax
+		call		acc386_64k_bump
 		jmp		.writeloop
 .writeloopend:
 		mov		si,write_complete_msg
@@ -289,12 +201,8 @@ _main_loop_command_writeb:
 		add		si,7				; accpeded, skip to addr
 		pop		ax				; rip away return
 		call		strtohex_32			; addr -> DX:AX
-		cmp		dx,0x10
-		jb		.addrok
-		mov		si,address_invalid_msg
-		jmp		_main_loop_command_response_output_err
-.addrok:	call		str_skip_whitespace
-		call		dx_ax_phys_to_real
+		call		str_skip_whitespace
+		call		dx_ax_phys_to_386seg
 		mov		es,dx
 		mov		bx,ax
 
@@ -313,9 +221,7 @@ _main_loop_command_writeb:
 
 		inc		bx
 		jnc		.writeloop
-		mov		ax,es
-		add		ax,0x1000
-		mov		es,ax
+		call		acc386_64k_bump
 		jmp		.writeloop
 .writeloopend:
 		mov		si,write_complete_msg
@@ -335,12 +241,8 @@ _main_loop_command_read:
 		add		si,5				; accepted, now parse mem address
 		pop		ax				; rip away return to _main_loop_command so we fall back to main loop
 		call		strtohex_32			; parse string into binary value (string hex digits to binary) -> DX:AX
-		cmp		dx,0x10				; in real mode on an 8086 we cannot address above the 1MB limit, >= 0x100000
-		jb		.addrok
-		mov		si,address_invalid_msg
-		jmp		_main_loop_command_response_output_err
-.addrok:	call		str_skip_whitespace
-		call		dx_ax_phys_to_real		; convert DX:AX into real-mode pointer
+		call		str_skip_whitespace
+		call		dx_ax_phys_to_386seg		; convert DX:AX into real-mode pointer
 		mov		es,dx
 		mov		bx,ax				; we'll use ES:BX to read
 
@@ -362,9 +264,7 @@ _main_loop_command_read:
 		call		com_char_out
 		inc		bx
 		jnc		.readloop
-		mov		ax,es
-		add		ax,0x1000
-		mov		es,ax
+		call		acc386_64k_bump
 		jmp		.readloop
 .readloopend:
 
@@ -386,12 +286,8 @@ _main_loop_command_readb:
 		add		si,6				; accepted, now parse mem address
 		pop		ax				; rip away return to _main_loop_command so we fall back to main loop
 		call		strtohex_32			; parse string into binary value (string hex digits to binary) -> DX:AX
-		cmp		dx,0x10				; in real mode on an 8086 we cannot address above the 1MB limit, >= 0x100000
-		jb		.addrok
-		mov		si,address_invalid_msg
-		jmp		_main_loop_command_response_output_err
-.addrok:	call		str_skip_whitespace
-		call		dx_ax_phys_to_real		; convert DX:AX into real-mode pointer
+		call		str_skip_whitespace
+		call		dx_ax_phys_to_386seg		; convert DX:AX into real-mode pointer
 		mov		es,dx
 		mov		bx,ax				; we'll use ES:BX to read
 
@@ -411,9 +307,7 @@ _main_loop_command_readb:
 		call		com_char_out
 		inc		bx
 		jnc		.readloop
-		mov		ax,es
-		add		ax,0x1000
-		mov		es,ax
+		call		acc386_64k_bump
 		jmp		.readloop
 .readloopend:
 
@@ -554,19 +448,59 @@ err_head:	db		'ERR ',0
 ok_head:	db		'OK ',0
 crlf:		db		13,10,0
 
-; convert physical addr DX:AX to real-mode address DX:AX
+; pump the access base up 64K
+acc386_64k_bump:
+		push		di
+		push		ax
+		mov		di,_gdt_table + ACCESS_SELECTOR
+		mov		word [di],0xFFFF
+		mov		word [di+2],0
+		add		byte [di+4],1
+		adc		byte [di+7],1
+		mov		ax,ACCESS_SELECTOR
+		mov		es,ax
+		pop		ax
+		pop		di
+		ret
+
+; convert physical addr DX:AX to 386-mode address DX:AX
+; note we accomplish this not by absolute translation but
+; by updating the "reference" selector. so what comes
+; back is AX zeroed and DX set to the access selector
 ;
 ; A0000 = A000:0000
 ; 12345 = 1000:2345
-dx_ax_phys_to_real:
-		mov		cl,12
-		shl		dx,cl				; DX <<= 12
-		push		ax
-		mov		cl,4
-		shr		ax,cl
-		or		dx,ax				; DX |= AX >> 4
-		pop		ax
-		and		ax,0Fh
+dx_ax_phys_to_386seg_code:
+		push		di
+		mov		di,_gdt_table + USER_CODE_SELECTOR
+		mov		word [di],0xFFFF			; limit kept at 0xFFFF
+		mov		word [di+2],ax				; base 0:15 = AX
+		mov		[di+4],dl				; DL becomes base 16:23
+		mov		[di+7],dh				; DH becomes base 24:31
+		pop		di
+		mov		dx,USER_CODE_SELECTOR
+		xor		ax,ax
+		ret
+
+; convert physical addr DX:AX to 386-mode address DX:AX
+; note we accomplish this not by absolute translation but
+; by updating the "reference" selector. so what comes
+; back is AX unchanged and DX set to the access selector
+;
+; A0000 = A000:0000
+; 12345 = 1000:2345
+;
+; NOT!!! Apparently I can't just bump bits 16:23 forward when I need to, it doesn't work!!!!
+dx_ax_phys_to_386seg:
+		push		di
+		mov		di,_gdt_table + ACCESS_SELECTOR
+		mov		word [di],0xFFFF			; limit kept at 0xFFFF
+		mov		word [di+2],ax				; base 0:15 kept at zero
+		mov		[di+4],dl				; DL becomes base 16:23
+		mov		[di+7],dh				; DH becomes base 24:31
+		pop		di
+		mov		dx,ACCESS_SELECTOR
+		xor		ax,ax
 		ret
 
 ; scan DS:SI forward to skip whitespace
@@ -577,37 +511,6 @@ str_skip_whitespace:
 .skip:		inc		si
 		jmp		str_skip_whitespace
 
-; print a string from DS:SI. use the BIOS.
-puts:		push		si
-		push		ax
-putsl:		lodsb
-		or		al,al
-		jz		putse
-		mov		ah,0Eh
-		int		10h
-		jmp		putsl
-putse:		pop		ax
-		pop		si
-		ret
-
-; print one char in AL
-putc:		push		ax
-		mov		ah,0Eh
-		int		10h
-		pop		ax
-		ret
-
-; print a hexadecimal digit in AL
-puthex_digit:	push		ax
-		push		bx
-		and		ax,0Fh
-		mov		bx,ax
-		mov		al,[hexdigits + bx]
-		call		putc
-		pop		bx
-		pop		ax
-		ret
-
 ; print a hexadecimal digit in AL
 com_puthex_digit:
 		push		ax
@@ -617,19 +520,6 @@ com_puthex_digit:
 		mov		al,[hexdigits + bx]
 		call		com_char_out
 		pop		bx
-		pop		ax
-		ret
-
-; print a hex number in AX
-puthex:		push		ax				; AX = 1234
-		rol		ax,4				; AX = 2341
-		call		puthex_digit
-		rol		ax,4				; AX = 3412
-		call		puthex_digit
-		rol		ax,4				; AX = 4123
-		call		puthex_digit
-		rol		ax,4				; AX = 1234
-		call		puthex_digit
 		pop		ax
 		ret
 
@@ -685,42 +575,142 @@ com_str_oute:	pop		ax
 		ret
 
 ; strings
-global hexdigits
-hexdigits:	db		'0123456789ABCDEF'
-comports:	dw		0x3F8,0x2F8,0x3E8,0x2E8
-note_8086:	db		'8086',0
+extern hexdigits
+note_386_16:	db		'386-16',0
 
 ; variables
 inited		db		0
-global comport
-comport		dw		0
+extern comport
+; comport	dw
 
 ; input buffer
 in_buf		times IN_BUF_SIZE db 0
 
+; generate 386 GDT
+gen_gdt_386:	mov		di,_gdt_table
+		cld
+		xor		ax,ax
+; #0 NULL entry
+		stosw
+		stosw
+		stosw
+		stosw
+; #1 code
+	; 0:15
+		mov		cl,4
+		mov		ax,0xFFFF		; limit
+		stosw
+	; 16:31
+		xor		ax,ax			; base
+		stosw
+	; 32:47
+		xor		al,al
+		mov		ah,0x9A			; access = present, ring 0, executable, readable
+		stosw
+	; 48:63
+		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		stosw
+; #2 data
+	; 0:15
+		mov		cl,4
+		mov		ax,0xFFFF		; limit
+		stosw
+	; 16:31
+		xor		ax,ax			; base
+		stosw
+	; 32:47
+		xor		al,al
+		mov		ah,0x92			; access = present, ring 0, readable/writeable, data
+		stosw
+	; 48:63
+		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		stosw
+; #3 ref data
+	; 0:15
+		mov		cl,4
+		mov		ax,0xFFFF		; limit
+		stosw
+	; 16:31
+		xor		ax,ax			; base
+		stosw
+	; 32:47
+		xor		al,al
+		mov		ah,0x92			; access = present, ring 0, readable/writeable, data
+		stosw
+	; 48:63
+		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		stosw
+; #4 ref code
+	; 0:15
+		mov		cl,4
+		mov		ax,0xFFFF		; limit
+		stosw
+	; 16:31
+		xor		ax,ax			; base
+		stosw
+	; 32:47
+		xor		al,al
+		mov		ah,0x9A			; access = present, ring 0, executable, readable
+		stosw
+	; 48:63
+		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		stosw
+
+; fill in the GDTR too
+		mov		di,_gdtr
+		mov		ax,(GDT_ENTRIES * 8) - 1
+		stosw					; limit
+		mov		ax,_gdt_table
+		stosw					; base 0:15
+		xor		ax,ax
+		stosw					; base 16:31
+		xor		ax,ax
+		stosw
+
+; done
+		ret
+
 ; jump here
-global _jmp_8086
+global _jmp_386_16
 align		16
-_jmp_8086:	cli
+_jmp_386_16:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		mov		ax,cs
 		mov		ds,ax
 		mov		ss,ax
+		mov		[_orig_cs],ax
 		mov		sp,7BFCh
-		sti
 		mov		si,ok_head
 		call		com_str_out
-		mov		si,note_8086
+		mov		si,note_386_16
 		call		com_str_out
+; now switch into 386 protected mode
+		call		gen_gdt_386
+		sgdt		[cs:_gdtr_old]
+		lgdt		[cs:_gdtr]
+		mov		eax,cr0
+		or		al,1			; switch on protected mode, 386 style
+		mov		cr0,eax
+		jmp		CODE_SELECTOR:.cacheflush
+.cacheflush:	mov		ax,DATA_SELECTOR
+		mov		ds,ax
+		mov		es,ax
+		mov		ss,ax
+; end the message
 		mov		si,crlf
 		call		com_str_out
 		jmp		_main_loop
+
+; GDT table needed for protected mode
+align		16
+_orig_cs	dw		0
+_gdt_table:	times (8 * GDT_ENTRIES) db 0
+_gdtr_old	dd		0,0
+_gdtr		dd		0,0
+_idtr_brainfuck:dd		0,0
+_idtr_realmode:	dd		0x400-1,0
 
 ; this must finish on a paragraph.
 ; when this and other images are catencated together this ensures each one can safely
 ; run from it's own 16-bit segment.
 align		16
-
-; other modules
-extern _jmp_286
-extern _jmp_386_16
 
