@@ -161,6 +161,7 @@ _main_loop_command:
 		call		_main_loop_command_write	; ..."WRITE"
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
+		call		_main_loop_command_x64		; ..."x64"
 		call		_main_loop_command_386_32	; ..."386-32"
 		call		_main_loop_command_386_16	; ..."386-16"
 		call		_main_loop_command_286		; ..."286"
@@ -169,6 +170,17 @@ _main_loop_command:
 ; we didn't understand the message
 		stc
 		ret
+
+; x64
+_main_loop_command_x64:
+		cmp		word [si],'x6'
+		jnz		.fail
+		cmp		byte [si+2],'4'
+		jnz		.fail
+		cmp		byte [si+3],0
+		jnz		.fail
+		; TODO
+.fail:		ret
 
 ; 386-32
 _main_loop_command_386_32:
@@ -738,4 +750,3 @@ align		16
 extern _jmp_286
 extern _jmp_386_16
 extern _jmp_386_32
-
