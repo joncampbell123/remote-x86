@@ -86,23 +86,11 @@ _main_loop_command:
 		call		_main_loop_command_write	; ..."WRITE"
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
-		call		_main_loop_command_286		; ..."286"
 		call		_main_loop_command_8086		; ..."8086"
 
 ; we didn't understand the message
 		stc
 		ret
-
-; 286
-_main_loop_command_286:
-		cmp		word [si],'28'
-		jnz		.fail
-		cmp		byte [si+2],'6'
-		jnz		.fail
-		cmp		byte [si+3],0
-		jnz		.fail
-		; TODO some attempt to switch back to 8086?
-.fail:		ret
 
 ; 8086
 _main_loop_command_8086:
@@ -112,7 +100,29 @@ _main_loop_command_8086:
 		jnz		.fail
 		cmp		byte [si+4],0
 		jnz		.fail
-		; TODO some attempt to switch back to 8086?
+		; write CMOS memory to tell the BIOS we're doing a type 5 reset
+		mov		al,0Fh
+		out		70h,al
+		mov		al,5
+		out		71h,al				; CMOS[0xF] = 5
+		; set 40:67 return vector for 286/386/486 BIOSes to ensure our safe return
+		mov		word [0x467],.realmode
+		mov		word [0x469],0
+		; switch the CPU back to real mode
+		; WARNING: a true blue 286 cannot switch back! lmsw+smsw will not reset the bit
+		; so we use 386 instructions. the host should have the knowhow to know that a true 286 cannot do this
+		lgdt		[cs:_gdtr_old]
+		lidt		[cs:_idtr_brainfuck]		; read up on the 286 reset trick. Bochs apparently supports this too :)
+		mov		eax,cr0				; <- this will crash and fault a 286, which is intended
+		lidt		[cs:_idtr_realmode]		; on a 386, we then load a sane IDT for real mode
+		and		al,0xFE				; turn off protected mode
+		mov		cr0,eax
+		; real mode, reload sectors
+.realmode:	mov		ax,[_orig_cs]
+		mov		ds,ax
+		mov		es,ax
+		mov		ss,ax
+		jmp		0x0000:_jmp_8086
 .fail:		ret
 
 ; EXEC command
@@ -685,6 +695,7 @@ _jmp_286:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		mov		ax,cs
 		mov		ds,ax
 		mov		ss,ax
+		mov		[_orig_cs],ax
 		mov		sp,7BFCh
 		mov		si,ok_head
 		call		com_str_out
@@ -692,6 +703,7 @@ _jmp_286:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		call		com_str_out
 ; now switch into 286 protected mode
 		call		gen_gdt_286
+		sgdt		[cs:_gdtr_old]
 		lgdt		[cs:_gdtr]
 		smsw		ax
 		or		ax,1			; switch on protected mode, 286 style
@@ -708,8 +720,12 @@ _jmp_286:	cli					; NO INTERRUPTS! We're not prepared to handle them
 
 ; GDT table needed for protected mode
 align		16
+_orig_cs	dw		0
 _gdt_table:	times (8 * GDT_ENTRIES) db 0
+_gdtr_old	dd		0,0
 _gdtr		dd		0,0
+_idtr_brainfuck:dd		0,0
+_idtr_realmode:	dd		0x400-1,0
 
 ; this must finish on a paragraph.
 ; when this and other images are catencated together this ensures each one can safely

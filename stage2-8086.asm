@@ -674,6 +674,7 @@ com_str_oute:	pop		ax
 global hexdigits
 hexdigits:	db		'0123456789ABCDEF'
 comports:	dw		0x3F8,0x2F8,0x3E8,0x2E8
+note_8086:	db		'8086',0
 
 ; variables
 inited		db		0
@@ -693,6 +694,8 @@ _jmp_8086:	cli
 		mov		sp,7BFCh
 		sti
 		mov		si,ok_head
+		call		com_str_out
+		mov		si,note_8086
 		call		com_str_out
 		mov		si,crlf
 		call		com_str_out
