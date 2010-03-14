@@ -1,11 +1,9 @@
-; FIXME: Update this code to use 386 instructions.
-;        So far this is an updated version of your 286 code. You can use 32-bit instructions in 16-bit segments!
+; ----------------32-bit code here-------------------
+use32
 
 IN_BUF_SIZE	equ			256
 GDT_ENTRIES	equ			32
 
-USER_CODE_SELECTOR	equ		0x20			; used by EXEC to run user code in it's own segment
-ACCESS_SELECTOR		equ		0x18			; used by READ/WRITE commands because 386 segments are limited to 64KB
 DATA_SELECTOR		equ		0x10
 CODE_SELECTOR		equ		0x08
 
@@ -21,8 +19,6 @@ extern _jmp_8086
 ;    Bochs 2.4.x's UART emulation is terrible. It seems to get stuck,
 ;        causing this code to loop infinitely waiting for the comport
 ;        to say it's safe to send another byte. Use VirtualBox instead.
-bits 16
-use16
 
 SECTION		.text
 
@@ -32,8 +28,8 @@ _main_loop:	cli					; keep interrupts disabled
 		mov		ax,DATA_SELECTOR
 		mov		es,ax
 
-		mov		bx,in_buf
-		xor		si,si			; BX+SI is used to index into in_buf
+		mov		ebx,in_buf
+		xor		esi,esi			; BX+SI is used to index into in_buf
 		
 _main_loop_read:call		com_char_in
 
@@ -46,36 +42,36 @@ _main_loop_read:call		com_char_in
 		call		com_char_in		; read in the binary, it won't be taken as newline
 
 _main_loop_read_al:
-		cmp		si,IN_BUF_SIZE-1	; don't overrun our buffer
+		cmp		esi,IN_BUF_SIZE-1	; don't overrun our buffer
 		jae		short _main_loop_read
 
-		mov		[bx+si],al		; store the char
-		inc		si
+		mov		[ebx+esi],al		; store the char
+		inc		esi
 		jmp		_main_loop_read
 
 _main_loop_process:
-		lea		di,[bx+si]		; store the end of the string
-		mov		si,bx			; SI = in_buf
+		lea		edi,[ebx+esi]		; store the end of the string
+		mov		esi,ebx			; SI = in_buf
 
 ; clear the rest of the buffer
-		push		di
+		push		edi
 		cld
 		xor		al,al
 _main_loop_process_clr:
 		stosb
-		cmp		di,IN_BUF_SIZE + in_buf
+		cmp		edi,IN_BUF_SIZE + in_buf
 		jb		_main_loop_process_clr
-		pop		di
+		pop		edi
 
-		cmp		si,di			; empty strings are ignored
+		cmp		esi,edi			; empty strings are ignored
 		jz		short _main_loop
 
 		call		_main_loop_command
 		jnc		short _main_loop	; command function will return with CF=0 if it understood it
 
-		mov		si,err_head
+		mov		esi,err_head
 		call		com_str_out
-		mov		si,unknown_command_msg
+		mov		esi,unknown_command_msg
 		call		com_str_out
 		jmp		short _main_loop
 
@@ -96,132 +92,118 @@ _main_loop_command:
 
 ; 8086
 _main_loop_command_8086:
-		cmp		word [si],'80'
+		cmp		dword [esi],'8086'
 		jnz		.fail
-		cmp		word [si+2],'86'
+		cmp		byte [esi+4],0
 		jnz		.fail
-		cmp		byte [si+4],0
-		jnz		.fail
-		; switch the CPU back to real mode
+		; UGH it seems we first have to thunk down to 16-bit protected mode, or else Bochs will continue
+		; executing 32-bit real mode code heee
+		mov		byte [_gdt_table + CODE_SELECTOR + 6],0x8F		; poof, we're 16-bit
+		mov		byte [_gdt_table + DATA_SELECTOR + 6],0x8F		; poof, our data segment is 16-bit
+		mov		ax,DATA_SELECTOR		; now force the CPU to update by that
+		mov		ds,ax
+		mov		es,ax
+		mov		ss,ax
+		jmp		CODE_SELECTOR:word .thunk16
+.thunk16:
+use16		; switch the CPU back to real mode
 		lgdt		[cs:_gdtr_old]
 		lidt		[cs:_idtr_realmode]		; on a 386, we then load a sane IDT for real mode
 		mov		eax,cr0				; <- this will crash and fault a 386, which is intended
 		and		al,0xFE				; turn off protected mode
 		mov		cr0,eax
-		jmp		0x0000:.realmode
+		jmp		0x0000:word .realmode
 		; real mode, reload sectors
-.realmode:	mov		ax,[_orig_cs]
+.realmode:	xor		ax,ax
 		mov		ds,ax
 		mov		es,ax
 		mov		ss,ax
 		jmp		0x0000:_jmp_8086
+use32
 .fail:		ret
 
 ; EXEC command
-; EXEC <seg>:<off>
+; EXEC <off>
 ;  in this case, the "segment" value is a byte offset where the code segment starts
 _main_loop_command_exec:
-		cmp		word [si],'EX'
+		cmp		dword [esi],'EXEC'
 		jnz		.fail
-		cmp		word [si+2],'EC'
+		cmp		byte [esi+4],' '
 		jnz		.fail
-		cmp		byte [si+4],' '
-		jnz		.fail
-		add		si,5
-		pop		ax
-		call		strtohex_32			; DX:AX = seg
-		call		dx_ax_phys_to_386seg_code
-		mov		es,dx
-		call		str_skip_whitespace
+		add		esi,5
+		pop		eax
 		call		strtohex
-		mov		bx,ax				; ES:BX = pointer to function
+		mov		ebx,eax				; ES:BX = pointer to function
 
-; run the code (far call)
-		mov		word [_command_exec_far_ptr+0],bx
-		mov		word [_command_exec_far_ptr+2],es
-		call far	word [_command_exec_far_ptr]
+; run the code (near call)
+		call		ebx
 
 ; done
-		mov		si,exec_complete_msg
+		mov		esi,exec_complete_msg
 		jmp		_main_loop_command_response_output
 
 .fail:		ret
 
-_command_exec_far_ptr:
-		dw		0,0
-
 ; WRITE command
 _main_loop_command_write:
-		cmp		word [si],'WR'
+		cmp		dword [esi],'WRIT'
 		jnz		.fail
-		cmp		word [si+2],'IT'
+		cmp		word [esi+4],'E '
 		jnz		.fail
-		cmp		word [si+4],'E '
-		jnz		.fail
-		add		si,6				; accpeded, skip to addr
-		pop		ax				; rip away return
-		call		strtohex_32			; addr -> DX:AX
+		add		esi,6				; accpeded, skip to addr
+		pop		eax				; rip away return
+		call		strtohex			; addr -> DX:AX
 		call		str_skip_whitespace
-		call		dx_ax_phys_to_386seg
-		mov		es,dx
-		mov		bx,ax
+		mov		ebx,eax
 
 ; bytes to write are read from the command
 .writeloop:	call		str_skip_whitespace
-		cmp		si,di
+		cmp		esi,edi
 		jae		.writeloopend
 		
 		call		strtohex
 		call		str_skip_whitespace
-		mov		[es:bx],al
+		mov		[ebx],al
 
-		inc		bx
-		jnc		.writeloop
-		call		acc386_64k_bump
+		inc		ebx
 		jmp		.writeloop
 .writeloopend:
-		mov		si,write_complete_msg
+		mov		esi,write_complete_msg
 		jmp		_main_loop_command_response_output
 
 .fail:		ret		
 
 ; WRITEB command
 _main_loop_command_writeb:
-		cmp		word [si],'WR'
+		cmp		dword [esi],'WRIT'
 		jnz		.fail
-		cmp		word [si+2],'IT'
+		cmp		word [esi+4],'EB'
 		jnz		.fail
-		cmp		word [si+4],'EB'
+		cmp		byte [esi+6],' '
 		jnz		.fail
-		cmp		byte [si+6],' '
-		jnz		.fail
-		add		si,7				; accpeded, skip to addr
-		pop		ax				; rip away return
-		call		strtohex_32			; addr -> DX:AX
+		add		esi,7				; accpeded, skip to addr
+		pop		eax				; rip away return
+		call		strtohex			; addr -> DX:AX
 		call		str_skip_whitespace
-		call		dx_ax_phys_to_386seg
-		mov		es,dx
-		mov		bx,ax
+		mov		ebx,eax
 
 		; how many bytes?
 		call		strtohex
-		mov		cx,ax
+		mov		ecx,eax
 
 		; binary data following it determines what we write.
 		; the host is expected to write EXACTLY the byte count it said
-.writeloop:	or		cx,cx
+.writeloop:	or		ecx,ecx
 		jz		.writeloopend
-		dec		cx
+		dec		ecx
 
 		call		com_char_in
-		mov		[es:bx],al
+		mov		[ebx],al
 
-		inc		bx
+		inc		ebx
 		jnc		.writeloop
-		call		acc386_64k_bump
-		jmp		.writeloop
 .writeloopend:
-		mov		si,write_complete_msg
+		mov		esi,write_complete_msg
 		jmp		_main_loop_command_response_output
 
 .fail:		ret		
@@ -229,44 +211,38 @@ _main_loop_command_writeb:
 ; READ command
 ; READ <phys memaddress> <number of bytes>
 _main_loop_command_read:
-		cmp		word [si],'RE'
+		cmp		dword [esi],'READ'
 		jnz		.fail
-		cmp		word [si+2],'AD'
+		cmp		byte [esi+4],' '
 		jnz		.fail
-		cmp		byte [si+4],' '
-		jnz		.fail
-		add		si,5				; accepted, now parse mem address
-		pop		ax				; rip away return to _main_loop_command so we fall back to main loop
-		call		strtohex_32			; parse string into binary value (string hex digits to binary) -> DX:AX
+		add		esi,5				; accepted, now parse mem address
+		pop		eax				; rip away return to _main_loop_command so we fall back to main loop
+		call		strtohex			; parse string into binary value (string hex digits to binary) -> DX:AX
 		call		str_skip_whitespace
-		call		dx_ax_phys_to_386seg		; convert DX:AX into real-mode pointer
-		mov		es,dx
-		mov		bx,ax				; we'll use ES:BX to read
+		mov		ebx,eax				; we'll use ES:BX to read
 
 		; how many bytes?
 		call		strtohex
-		mov		cx,ax
+		mov		ecx,eax
 
 		; start of message
-		mov		si,ok_head
+		mov		esi,ok_head
 		call		com_str_out
 
-.readloop:	or		cx,cx
+.readloop:	or		ecx,ecx
 		jz		.readloopend
-		dec		cx
+		dec		ecx
 
-		mov		al,[es:bx]
+		mov		al,[ebx]
 		call		com_hex8_out
 		mov		al,' '
 		call		com_char_out
-		inc		bx
-		jnc		.readloop
-		call		acc386_64k_bump
+		inc		ebx
 		jmp		.readloop
 .readloopend:
 
 		; end of message
-		mov		si,crlf
+		mov		esi,crlf
 		call		com_str_out
 		clc
 .fail:		ret
@@ -274,89 +250,81 @@ _main_loop_command_read:
 ; READB command
 ; READB <phys memaddress> <number of bytes>
 _main_loop_command_readb:
-		cmp		word [si],'RE'
+		cmp		dword [esi],'READ'
 		jnz		.fail
-		cmp		word [si+2],'AD'
+		cmp		word [esi+4],'B '
 		jnz		.fail
-		cmp		word [si+4],'B '
-		jnz		.fail
-		add		si,6				; accepted, now parse mem address
-		pop		ax				; rip away return to _main_loop_command so we fall back to main loop
-		call		strtohex_32			; parse string into binary value (string hex digits to binary) -> DX:AX
+		add		esi,6				; accepted, now parse mem address
+		pop		eax				; rip away return to _main_loop_command so we fall back to main loop
+		call		strtohex			; parse string into binary value (string hex digits to binary) -> DX:AX
 		call		str_skip_whitespace
-		call		dx_ax_phys_to_386seg		; convert DX:AX into real-mode pointer
-		mov		es,dx
-		mov		bx,ax				; we'll use ES:BX to read
+		mov		ebx,eax				; we'll use ES:BX to read
 
 		; how many bytes?
 		call		strtohex
-		mov		cx,ax
+		mov		ecx,eax
 
 		; start of message
-		mov		si,ok_head
+		mov		esi,ok_head
 		call		com_str_out
 
-.readloop:	or		cx,cx
+.readloop:	or		ecx,ecx
 		jz		.readloopend
-		dec		cx
+		dec		ecx
 
-		mov		al,[es:bx]
+		mov		al,[ebx]
 		call		com_char_out
-		inc		bx
-		jnc		.readloop
-		call		acc386_64k_bump
+		inc		ebx
 		jmp		.readloop
 .readloopend:
 
 		; end of message
-		mov		si,crlf
+		mov		esi,crlf
 		call		com_str_out
 		clc
 .fail:		ret
 
 ; TEST command
 _main_loop_command_test:
-		cmp		word [si],'TE'
+		cmp		word [esi],'TEST'
 		jnz		.fail
-		cmp		word [si+2],'ST'
-		jnz		.fail
-		cmp		byte [si+4],0
+		cmp		byte [esi+4],0
 		jnz		.fail
 ; OK-----it is TEST
-		pop		ax				; remove stack frame back to _main_loop_command so we head straight back to the caller of that function
-		mov		si,test_response
+		pop		eax				; remove stack frame back to _main_loop_command so we head straight back to the caller of that function
+		mov		esi,test_response
 		jmp		_main_loop_command_response_output
 		call		com_str_out
 .fail:		ret						; on failure, we go back to _main_loop_command. on success, we go straight back to _main_loop_process_clr
 
 ; SI = message to return with 'OK' header. caller should JUMP to us not CALL us. well actually it doesn't matter, but that's the intent.
 _main_loop_command_response_output:
-		push		si
-		mov		si,ok_head
+		push		esi
+		mov		esi,ok_head
 		call		com_str_out
-		pop		si
+		pop		esi
 		call		com_str_out
-		mov		si,crlf
+		mov		esi,crlf
 		call		com_str_out
 		clc
 		ret
 
 ; SI = message to return with 'ERR' header. caller should JUMP to us not CALL us. well actually it doesn't matter, but that's the intent.
 _main_loop_command_response_output_err:
-		push		si
-		mov		si,err_head
+		push		esi
+		mov		esi,err_head
 		call		com_str_out
-		pop		si
+		pop		esi
 		call		com_str_out
-		mov		si,crlf
+		mov		esi,crlf
 		call		com_str_out
 		clc
 		ret
 
 _main_loop_command_understood_generic:
-		mov		si,ok_head
+		mov		esi,ok_head
 		call		com_str_out
-		mov		si,crlf
+		mov		esi,crlf
 		call		com_str_out
 		clc
 		ret
@@ -364,7 +332,7 @@ _main_loop_command_understood_generic:
 ; strtohex_getdigit
 ; from DS:SI read one char and convert to hex. if not hex digit, then CF=1
 strtohex_getdigit:
-		push		ax
+		push		eax
 		lodsb
 		cmp		al,'0'
 		jb		.err			; '0' to '9' are 0x30-0x39 so anything below that is invalid
@@ -383,53 +351,25 @@ strtohex_getdigit:
 
 .ok:		clc
 		mov		bl,al
-		pop		ax
+		pop		eax
 		ret
 
 .err:		stc
-		pop		ax
+		pop		eax
 		ret
 
 ; scan string from DS:SI returning in AX.
 ; SI is returned adjusted forward to the first non-digit char
-strtohex:	push		bx
-		push		cx
-		xor		ax,ax
+strtohex:	push		ebx
+		xor		eax,eax
 .loop:		call		strtohex_getdigit
 		jc		.end			; function will set CF=1 if it isn't a hex digit. else the converted digit will be in BL
 
-		mov		cl,4
-		shl		ax,cl
+		shl		eax,4
 		or		al,bl			; AX = (AX << 4) | BL
 		jmp		.loop
 
-.end:		pop		cx
-		pop		bx
-		ret
-
-; scan string from DS:SI returning in DX:AX.
-; SI is returned adjusted forward to the first non-digit char
-strtohex_32:	push		bx
-		push		cx
-		xor		ax,ax
-		mov		dx,ax
-.loop:		call		strtohex_getdigit
-		jc		.end			; function will set CF=1 if it isn't a hex digit. else the converted digit will be in BL
-
-		push		bx
-		mov		cl,12
-		mov		bx,ax			; BX = AX >> 12
-		shr		bx,cl
-		mov		cl,4
-		shl		dx,cl
-		or		dl,bl			; DX = (DX << 4) | [(AX >> 12)]
-		pop		bx
-		shl		ax,cl
-		or		al,bl			; AX = (AX << 4) | BL
-		jmp		.loop
-
-.end:		pop		cx
-		pop		bx
+.end:		pop		ebx
 		ret
 
 ; hello
@@ -444,61 +384,6 @@ test_response:	db		'Test successful',0
 err_head:	db		'ERR ',0
 ok_head:	db		'OK ',0
 crlf:		db		13,10,0
-
-; pump the access base up 64K
-acc386_64k_bump:
-		push		di
-		push		ax
-		mov		di,_gdt_table + ACCESS_SELECTOR
-		mov		word [di],0xFFFF
-		mov		word [di+2],0
-		add		byte [di+4],1
-		adc		byte [di+7],1
-		mov		ax,ACCESS_SELECTOR
-		mov		es,ax
-		pop		ax
-		pop		di
-		ret
-
-; convert physical addr DX:AX to 386-mode address DX:AX
-; note we accomplish this not by absolute translation but
-; by updating the "reference" selector. so what comes
-; back is AX zeroed and DX set to the access selector
-;
-; A0000 = A000:0000
-; 12345 = 1000:2345
-dx_ax_phys_to_386seg_code:
-		push		di
-		mov		di,_gdt_table + USER_CODE_SELECTOR
-		mov		word [di],0xFFFF			; limit kept at 0xFFFF
-		mov		word [di+2],ax				; base 0:15 = AX
-		mov		[di+4],dl				; DL becomes base 16:23
-		mov		[di+7],dh				; DH becomes base 24:31
-		pop		di
-		mov		dx,USER_CODE_SELECTOR
-		xor		ax,ax
-		ret
-
-; convert physical addr DX:AX to 386-mode address DX:AX
-; note we accomplish this not by absolute translation but
-; by updating the "reference" selector. so what comes
-; back is AX unchanged and DX set to the access selector
-;
-; A0000 = A000:0000
-; 12345 = 1000:2345
-;
-; NOT!!! Apparently I can't just bump bits 16:23 forward when I need to, it doesn't work!!!!
-dx_ax_phys_to_386seg:
-		push		di
-		mov		di,_gdt_table + ACCESS_SELECTOR
-		mov		word [di],0xFFFF			; limit kept at 0xFFFF
-		mov		word [di+2],ax				; base 0:15 kept at zero
-		mov		[di+4],dl				; DL becomes base 16:23
-		mov		[di+7],dh				; DH becomes base 24:31
-		pop		di
-		mov		dx,ACCESS_SELECTOR
-		xor		ax,ax
-		ret
 
 ; scan DS:SI forward to skip whitespace
 str_skip_whitespace:
@@ -562,7 +447,7 @@ com_char_out_wait:
 
 com_str_out:	push		si
 		push		ax
-com_str_outl:	lodsb
+com_str_outl:	a16 lodsb
 		or		al,al
 		jz		com_str_oute
 		call		com_char_out
@@ -573,7 +458,7 @@ com_str_oute:	pop		ax
 
 ; strings
 extern hexdigits
-note_386_16:	db		'386-16',0
+note_386_32:	db		'386-32',0
 
 ; variables
 inited		db		0
@@ -582,6 +467,9 @@ extern comport
 
 ; input buffer
 in_buf		times IN_BUF_SIZE db 0
+
+; ----------------16-bit code here-------------------
+use16
 
 ; generate 386 GDT
 gen_gdt_386:	mov		di,_gdt_table
@@ -605,7 +493,7 @@ gen_gdt_386:	mov		di,_gdt_table
 		mov		ah,0x9A			; access = present, ring 0, executable, readable
 		stosw
 	; 48:63
-		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		mov		ax,0x00CF		; base 24:31 granular 4KB pages, 32-bit selector
 		stosw
 ; #2 data
 	; 0:15
@@ -620,7 +508,7 @@ gen_gdt_386:	mov		di,_gdt_table
 		mov		ah,0x92			; access = present, ring 0, readable/writeable, data
 		stosw
 	; 48:63
-		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		mov		ax,0x00CF		; base 24:31 granular 4KB pages, 32-bit selector
 		stosw
 ; #3 ref data
 	; 0:15
@@ -635,7 +523,7 @@ gen_gdt_386:	mov		di,_gdt_table
 		mov		ah,0x92			; access = present, ring 0, readable/writeable, data
 		stosw
 	; 48:63
-		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		mov		ax,0x00CF		; base 24:31 granular 4KB pages, 32-bit selector
 		stosw
 ; #4 ref code
 	; 0:15
@@ -650,7 +538,7 @@ gen_gdt_386:	mov		di,_gdt_table
 		mov		ah,0x9A			; access = present, ring 0, executable, readable
 		stosw
 	; 48:63
-		mov		ax,0x008F		; base 24:31 granular 4KB pages, 16-bit selector
+		mov		ax,0x00CF		; base 24:31 granular 4KB pages, 32-bit selector
 		stosw
 
 ; fill in the GDTR too
@@ -668,32 +556,33 @@ gen_gdt_386:	mov		di,_gdt_table
 		ret
 
 ; jump here
-global _jmp_386_16
+global _jmp_386_32
 align		16
-_jmp_386_16:	cli					; NO INTERRUPTS! We're not prepared to handle them
+
+_jmp_386_32:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		mov		ax,cs
 		mov		ds,ax
 		mov		ss,ax
 		mov		[_orig_cs],ax
 		mov		sp,7BFCh
-		mov		si,ok_head
-		call		com_str_out
-		mov		si,note_386_16
-		call		com_str_out
-; now switch into 386 protected mode
 		call		gen_gdt_386
 		sgdt		[cs:_gdtr_old]
 		lgdt		[cs:_gdtr]
 		mov		eax,cr0
 		or		al,1			; switch on protected mode, 386 style
 		mov		cr0,eax
-		jmp		CODE_SELECTOR:.cacheflush
+		jmp		dword CODE_SELECTOR:.cacheflush
+use32
 .cacheflush:	mov		ax,DATA_SELECTOR
 		mov		ds,ax
 		mov		es,ax
 		mov		ss,ax
-; end the message
-		mov		si,crlf
+; out the message
+		mov		esi,ok_head
+		call		com_str_out
+		mov		esi,note_386_32
+		call		com_str_out
+		mov		esi,crlf
 		call		com_str_out
 		jmp		_main_loop
 

@@ -161,13 +161,27 @@ _main_loop_command:
 		call		_main_loop_command_write	; ..."WRITE"
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
-		call		_main_loop_command_286		; ..."286"
+		call		_main_loop_command_386_32	; ..."386-32"
 		call		_main_loop_command_386_16	; ..."386-16"
+		call		_main_loop_command_286		; ..."286"
 		call		_main_loop_command_8086		; ..."8086"
 
 ; we didn't understand the message
 		stc
 		ret
+
+; 386-32
+_main_loop_command_386_32:
+		cmp		word [si],'38'
+		jnz		.fail
+		cmp		word [si+2],'6-'
+		jnz		.fail
+		cmp		word [si+4],'32'
+		jnz		.fail
+		cmp		byte [si+6],0
+		jnz		.fail
+		jmp		_jmp_386_32
+.fail:		ret
 
 ; 386-16
 _main_loop_command_386_16:
@@ -723,4 +737,5 @@ align		16
 ; other modules
 extern _jmp_286
 extern _jmp_386_16
+extern _jmp_386_32
 
