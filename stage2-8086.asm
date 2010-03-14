@@ -179,7 +179,7 @@ _main_loop_command_x64:
 		jnz		.fail
 		cmp		byte [si+3],0
 		jnz		.fail
-		; TODO
+		jmp		_jmp_x64
 .fail:		ret
 
 ; 386-32
@@ -750,3 +750,5 @@ align		16
 extern _jmp_286
 extern _jmp_386_16
 extern _jmp_386_32
+extern _jmp_x64
+

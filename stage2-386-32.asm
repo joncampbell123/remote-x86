@@ -286,7 +286,7 @@ _main_loop_command_readb:
 
 ; TEST command
 _main_loop_command_test:
-		cmp		word [esi],'TEST'
+		cmp		dword [esi],'TEST'
 		jnz		.fail
 		cmp		byte [esi+4],0
 		jnz		.fail
