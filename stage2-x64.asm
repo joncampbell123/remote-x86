@@ -116,7 +116,7 @@ use32
 		xor		eax,eax
 		stosd
 		inc		edx
-		cmp		eax,512
+		cmp		edx,512
 		jb		.pml2loop
 
 ; switch on long mode
