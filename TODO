@@ -16,7 +16,7 @@ Stage 1 loader:
    - Make an El Torito CD-ROM boot sector, so that you can burn this code
      to CD-ROM and use it on newer machines where a floppy drive is lacking [DONE]
 
-   - Find out why your bootable CD-ROM fails under Microsoft Virtual PC (oh but of course!)
+   - Find out why your bootable CD-ROM fails under Microsoft Virtual PC (oh, but of course...)
 
 Host-side software:
    - Write Linux user-space program to talk to the client
