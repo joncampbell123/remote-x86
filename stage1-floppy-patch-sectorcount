@@ -8,6 +8,8 @@ die if -s $sizeby == 0;
 open(B,"+<",$file) || die;
 binmode(B);
 seek(B,512-4,0);
-print B pack("v",int((( -s $sizeby) + 511 ) / 512));
+my $sectors = (( -s $sizeby) + 511) / 512;
+print "$file: $sectors sectors\n";
+print B pack("v",int($sectors));
 close(B);
 

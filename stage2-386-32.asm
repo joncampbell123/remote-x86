@@ -428,32 +428,32 @@ com_char_in_wait:
 		ret
 
 ; write one byte to the comport from AL
-com_char_out:	push		dx
-		push		ax
-		push		cx
+com_char_out:	push		edx
+		push		eax
+		push		ecx
 		mov		dx,[comport]
 		add		dx,5
-		xor		cx,cx
+		xor		ecx,ecx
 com_char_out_wait:
 		in		al,dx
 		test		al,0x60				; is transmit buffer empty?
 		jz		com_char_out_wait		; if not, loop again
 		mov		dx,[comport]
-		pop		cx
-		pop		ax
+		pop		ecx
+		pop		eax
 		out		dx,al
-		pop		dx
+		pop		edx
 		ret
 
-com_str_out:	push		si
-		push		ax
-com_str_outl:	a16 lodsb
+com_str_out:	push		esi
+		push		eax
+com_str_outl:	lodsb
 		or		al,al
 		jz		com_str_oute
 		call		com_char_out
 		jmp		com_str_outl
-com_str_oute:	pop		ax
-		pop		si
+com_str_oute:	pop		eax
+		pop		esi
 		ret
 
 ; strings

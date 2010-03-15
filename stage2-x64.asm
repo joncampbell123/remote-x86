@@ -67,15 +67,15 @@ _main_loop_process_clr:
 		jb		_main_loop_process_clr
 		pop		rdi
 
-		cmp		esi,edi			; empty strings are ignored
+		cmp		rsi,rdi			; empty strings are ignored
 		jz		short _main_loop
 
 		call		_main_loop_command
 		jnc		short _main_loop	; command function will return with CF=0 if it understood it
 
-		mov		esi,err_head
+		mov		rsi,err_head
 		call		com_str_out
-		mov		esi,unknown_command_msg
+		mov		rsi,unknown_command_msg
 		call		com_str_out
 		jmp		short _main_loop
 
@@ -96,9 +96,9 @@ _main_loop_command:
 
 ; 8086
 _main_loop_command_8086:
-		cmp		dword [esi],'8086'
+		cmp		dword [rsi],'8086'
 		jnz		.fail
-		cmp		byte [esi+4],0
+		cmp		byte [rsi+4],0
 		jnz		.fail
 		; UGH it seems we first have to thunk down to 16-bit protected mode, or else Bochs will continue
 		; executing 32-bit real mode code heee
@@ -124,91 +124,91 @@ use16		; switch the CPU back to real mode
 		mov		es,ax
 		mov		ss,ax
 		jmp		0x0000:_jmp_8086
-use32
+use64
 .fail:		ret
 
 ; EXEC command
 ; EXEC <off>
 ;  in this case, the "segment" value is a byte offset where the code segment starts
 _main_loop_command_exec:
-		cmp		dword [esi],'EXEC'
+		cmp		dword [rsi],'EXEC'
 		jnz		.fail
-		cmp		byte [esi+4],' '
+		cmp		byte [rsi+4],' '
 		jnz		.fail
-		add		esi,5
-		pop		eax
+		add		rsi,5
+		pop		rax
 		call		strtohex
-		mov		ebx,eax				; ES:BX = pointer to function
+		mov		rbx,rax				; ES:BX = pointer to function
 
 ; run the code (near call)
-		call		ebx
+		call		rbx
 
 ; done
-		mov		esi,exec_complete_msg
+		mov		rsi,exec_complete_msg
 		jmp		_main_loop_command_response_output
 
 .fail:		ret
 
 ; WRITE command
 _main_loop_command_write:
-		cmp		dword [esi],'WRIT'
+		cmp		dword [rsi],'WRIT'
 		jnz		.fail
-		cmp		word [esi+4],'E '
+		cmp		word [rsi+4],'E '
 		jnz		.fail
-		add		esi,6				; accpeded, skip to addr
-		pop		eax				; rip away return
+		add		rsi,6				; accpeded, skip to addr
+		pop		rax				; rip away return
 		call		strtohex			; addr -> DX:AX
 		call		str_skip_whitespace
-		mov		ebx,eax
+		mov		rbx,rax
 
 ; bytes to write are read from the command
 .writeloop:	call		str_skip_whitespace
-		cmp		esi,edi
+		cmp		rsi,rdi
 		jae		.writeloopend
 		
 		call		strtohex
 		call		str_skip_whitespace
-		mov		[ebx],al
+		mov		[rbx],al
 
-		inc		ebx
+		inc		rbx
 		jmp		.writeloop
 .writeloopend:
-		mov		esi,write_complete_msg
+		mov		rsi,write_complete_msg
 		jmp		_main_loop_command_response_output
 
 .fail:		ret		
 
 ; WRITEB command
 _main_loop_command_writeb:
-		cmp		dword [esi],'WRIT'
+		cmp		dword [rsi],'WRIT'
 		jnz		.fail
-		cmp		word [esi+4],'EB'
+		cmp		word [rsi+4],'EB'
 		jnz		.fail
-		cmp		byte [esi+6],' '
+		cmp		byte [rsi+6],' '
 		jnz		.fail
-		add		esi,7				; accpeded, skip to addr
-		pop		eax				; rip away return
+		add		rsi,7				; accpeded, skip to addr
+		pop		rax				; rip away return
 		call		strtohex			; addr -> DX:AX
 		call		str_skip_whitespace
-		mov		ebx,eax
+		mov		rbx,rax
 
 		; how many bytes?
 		call		strtohex
-		mov		ecx,eax
+		mov		rcx,rax
 
 		; binary data following it determines what we write.
 		; the host is expected to write EXACTLY the byte count it said
-.writeloop:	or		ecx,ecx
+.writeloop:	or		rcx,rcx
 		jz		.writeloopend
-		dec		ecx
+		dec		rcx
 
 		call		com_char_in
-		mov		[ebx],al
+		mov		[rbx],al
 
-		inc		ebx
+		inc		rbx
 		jnc		.writeloop
 .writeloopend:
-		mov		esi,write_complete_msg
+		mov		rsi,write_complete_msg
 		jmp		_main_loop_command_response_output
 
 .fail:		ret		
@@ -216,38 +216,38 @@ _main_loop_command_writeb:
 ; READ command
 ; READ <phys memaddress> <number of bytes>
 _main_loop_command_read:
-		cmp		dword [esi],'READ'
+		cmp		dword [rsi],'READ'
 		jnz		.fail
-		cmp		byte [esi+4],' '
+		cmp		byte [rsi+4],' '
 		jnz		.fail
-		add		esi,5				; accepted, now parse mem address
-		pop		eax				; rip away return to _main_loop_command so we fall back to main loop
+		add		rsi,5				; accepted, now parse mem address
+		pop		rax				; rip away return to _main_loop_command so we fall back to main loop
 		call		strtohex			; parse string into binary value (string hex digits to binary) -> DX:AX
 		call		str_skip_whitespace
-		mov		ebx,eax				; we'll use ES:BX to read
+		mov		rbx,rax				; we'll use ES:BX to read
 
 		; how many bytes?
 		call		strtohex
-		mov		ecx,eax
+		mov		rcx,rax
 
 		; start of message
-		mov		esi,ok_head
+		mov		rsi,ok_head
 		call		com_str_out
 
-.readloop:	or		ecx,ecx
+.readloop:	or		rcx,rcx
 		jz		.readloopend
-		dec		ecx
+		dec		rcx
 
-		mov		al,[ebx]
+		mov		al,[rbx]
 		call		com_hex8_out
 		mov		al,' '
 		call		com_char_out
-		inc		ebx
+		inc		rbx
 		jmp		.readloop
 .readloopend:
 
 		; end of message
-		mov		esi,crlf
+		mov		rsi,crlf
 		call		com_str_out
 		clc
 .fail:		ret
@@ -255,81 +255,81 @@ _main_loop_command_read:
 ; READB command
 ; READB <phys memaddress> <number of bytes>
 _main_loop_command_readb:
-		cmp		dword [esi],'READ'
+		cmp		dword [rsi],'READ'
 		jnz		.fail
-		cmp		word [esi+4],'B '
+		cmp		word [rsi+4],'B '
 		jnz		.fail
-		add		esi,6				; accepted, now parse mem address
-		pop		eax				; rip away return to _main_loop_command so we fall back to main loop
+		add		rsi,6				; accepted, now parse mem address
+		pop		rax				; rip away return to _main_loop_command so we fall back to main loop
 		call		strtohex			; parse string into binary value (string hex digits to binary) -> DX:AX
 		call		str_skip_whitespace
-		mov		ebx,eax				; we'll use ES:BX to read
+		mov		rbx,rax				; we'll use ES:BX to read
 
 		; how many bytes?
 		call		strtohex
-		mov		ecx,eax
+		mov		rcx,rax
 
 		; start of message
-		mov		esi,ok_head
+		mov		rsi,ok_head
 		call		com_str_out
 
-.readloop:	or		ecx,ecx
+.readloop:	or		rcx,rcx
 		jz		.readloopend
-		dec		ecx
+		dec		rcx
 
-		mov		al,[ebx]
+		mov		al,[rbx]
 		call		com_char_out
-		inc		ebx
+		inc		rbx
 		jmp		.readloop
 .readloopend:
 
 		; end of message
-		mov		esi,crlf
+		mov		rsi,crlf
 		call		com_str_out
 		clc
 .fail:		ret
 
 ; TEST command
 _main_loop_command_test:
-		cmp		dword [esi],'TEST'
+		cmp		dword [rsi],'TEST'
 		jnz		.fail
-		cmp		byte [esi+4],0
+		cmp		byte [rsi+4],0
 		jnz		.fail
 ; OK-----it is TEST
-		pop		eax				; remove stack frame back to _main_loop_command so we head straight back to the caller of that function
-		mov		esi,test_response
+		pop		rax				; remove stack frame back to _main_loop_command so we head straight back to the caller of that function
+		mov		rsi,test_response
 		jmp		_main_loop_command_response_output
 		call		com_str_out
 .fail:		ret						; on failure, we go back to _main_loop_command. on success, we go straight back to _main_loop_process_clr
 
 ; SI = message to return with 'OK' header. caller should JUMP to us not CALL us. well actually it doesn't matter, but that's the intent.
 _main_loop_command_response_output:
-		push		esi
-		mov		esi,ok_head
+		push		rsi
+		mov		rsi,ok_head
 		call		com_str_out
-		pop		esi
+		pop		rsi
 		call		com_str_out
-		mov		esi,crlf
+		mov		rsi,crlf
 		call		com_str_out
 		clc
 		ret
 
 ; SI = message to return with 'ERR' header. caller should JUMP to us not CALL us. well actually it doesn't matter, but that's the intent.
 _main_loop_command_response_output_err:
-		push		esi
-		mov		esi,err_head
+		push		rsi
+		mov		rsi,err_head
 		call		com_str_out
-		pop		esi
+		pop		rsi
 		call		com_str_out
-		mov		esi,crlf
+		mov		rsi,crlf
 		call		com_str_out
 		clc
 		ret
 
 _main_loop_command_understood_generic:
-		mov		esi,ok_head
+		mov		rsi,ok_head
 		call		com_str_out
-		mov		esi,crlf
+		mov		rsi,crlf
 		call		com_str_out
 		clc
 		ret
@@ -337,7 +337,7 @@ _main_loop_command_understood_generic:
 ; strtohex_getdigit
 ; from DS:SI read one char and convert to hex. if not hex digit, then CF=1
 strtohex_getdigit:
-		push		eax
+		push		rax
 		lodsb
 		cmp		al,'0'
 		jb		.err			; '0' to '9' are 0x30-0x39 so anything below that is invalid
@@ -356,25 +356,25 @@ strtohex_getdigit:
 
 .ok:		clc
 		mov		bl,al
-		pop		eax
+		pop		rax
 		ret
 
 .err:		stc
-		pop		eax
+		pop		rax
 		ret
 
 ; scan string from DS:SI returning in AX.
 ; SI is returned adjusted forward to the first non-digit char
-strtohex:	push		ebx
-		xor		eax,eax
+strtohex:	push		rbx
+		xor		rax,rax
 .loop:		call		strtohex_getdigit
 		jc		.end			; function will set CF=1 if it isn't a hex digit. else the converted digit will be in BL
 
-		shl		eax,4
+		shl		rax,4
 		or		al,bl			; AX = (AX << 4) | BL
 		jmp		.loop
 
-.end:		pop		ebx
+.end:		pop		rbx
 		ret
 
 ; hello
@@ -392,35 +392,35 @@ crlf:		db		13,10,0
 
 ; scan DS:SI forward to skip whitespace
 str_skip_whitespace:
-		cmp		byte [si],' '
+		cmp		byte [rsi],' '
 		jz		.skip
 .end		ret
-.skip:		inc		si
+.skip:		inc		rsi
 		jmp		str_skip_whitespace
 
 ; print a hexadecimal digit in AL
 com_puthex_digit:
-		push		ax
-		push		bx
-		and		ax,0Fh
-		mov		bx,ax
-		mov		al,[hexdigits + bx]
+		push		rax
+		push		rbx
+		and		rax,0Fh
+		mov		rbx,rax
+		mov		al,[hexdigits + rbx]
 		call		com_char_out
-		pop		bx
-		pop		ax
+		pop		rbx
+		pop		rax
 		ret
 
 ; print a hex number in AX
-com_hex8_out:	push		ax				; AX = 1234
+com_hex8_out:	push		rax				; AX = 1234
 		rol		al,4				; AX = 2341
 		call		com_puthex_digit
 		rol		al,4				; AX = 3412
 		call		com_puthex_digit
-		pop		ax
+		pop		rax
 		ret
 
 ; read one byte from the comport
-com_char_in:	push		dx
+com_char_in:	push		rdx
 		mov		dx,[comport]
 		add		dx,5				; DX = Line status register
 com_char_in_wait:
@@ -429,13 +429,13 @@ com_char_in_wait:
 		jz		com_char_in_wait
 		sub		dx,5				; DX = recieve buffer
 		in		al,dx
-		pop		dx
+		pop		rdx
 		ret
 
 ; write one byte to the comport from AL
-com_char_out:	push		dx
-		push		ax
-		push		cx
+com_char_out:	push		rdx
+		push		rax
+		push		rcx
 		mov		dx,[comport]
 		add		dx,5
 		xor		cx,cx
@@ -444,26 +444,26 @@ com_char_out_wait:
 		test		al,0x60				; is transmit buffer empty?
 		jz		com_char_out_wait		; if not, loop again
 		mov		dx,[comport]
-		pop		cx
-		pop		ax
+		pop		rcx
+		pop		rax
 		out		dx,al
-		pop		dx
+		pop		rdx
 		ret
 
-com_str_out:	push		si
-		push		ax
-com_str_outl:	a16 lodsb
+com_str_out:	push		rsi
+		push		rax
+com_str_outl:	lodsb
 		or		al,al
 		jz		com_str_oute
 		call		com_char_out
 		jmp		com_str_outl
-com_str_oute:	pop		ax
-		pop		si
+com_str_oute:	pop		rax
+		pop		rsi
 		ret
 
 ; strings
 extern hexdigits
-note_386_32:	db		'386-32',0
+note_x64:	db		'x64',0
 
 ; variables
 inited		db		0
@@ -592,8 +592,13 @@ use32
 
 		jmp		CODE_SELECTOR:.longmode
 use64
-.longmode:	mov		rax,rbx
-		jmp		short $
+.longmode:	mov		rsi,ok_head
+		call		com_str_out
+		mov		rsi,note_x64
+		call		com_str_out
+		mov		rsi,crlf
+		call		com_str_out
+		jmp		_main_loop
 
 ; generate 386 GDT
 use16

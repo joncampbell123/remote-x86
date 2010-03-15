@@ -9,8 +9,8 @@ stage1-floppy.bin: stage1-floppy.asm
 
 
 floppy-raw.bin: stage1-floppy.bin stage2.bin
-	cat stage1-floppy.bin stage2.bin >$@
 	./stage1-floppy-patch-sectorcount stage1-floppy.bin stage2.bin
+	cat stage1-floppy.bin stage2.bin >$@
 
 floppy.bin: floppy-raw.bin
 	(cat $< && cat /dev/zero) | dd of=$@ bs=512 count=2880
@@ -39,8 +39,8 @@ stage2-x64-stub.o: stage2-x64-stub.asm
 
 
 floppy-x64-raw.bin: stage1-floppy.bin stage2-x64.bin
-	cat stage1-floppy.bin stage2-x64.bin >$@
 	./stage1-floppy-patch-sectorcount stage1-floppy.bin stage2-x64.bin
+	cat stage1-floppy.bin stage2-x64.bin >$@
 
 floppy-x64.bin: floppy-x64-raw.bin
 	(cat $< && cat /dev/zero) | dd of=$@ bs=512 count=2880
