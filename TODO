@@ -6,7 +6,7 @@ Code consolidation:
      is set properly. [DONE]
    
 Protocol:
-   - Type up a document describing the communication protocol
+   - Type up a document describing the communication protocol [TODO]
 
    - Add command to protocol that allows the host to ask: what's the lowest
      memory address available for me to work with? (to avoid overwriting the
