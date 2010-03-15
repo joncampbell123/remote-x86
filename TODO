@@ -1,0 +1,46 @@
+
+Code consolidation:
+   For 8086, 286, and 386-16 code:
+     Consolidate con_char_in and con_char_out, they all work the
+     same and make no segment references, they only assume that DS
+     is set properly.
+   
+Protocol:
+   - Type up a document describing the communication protocol
+   - Add makefile code to autodetect presence of x86_64-pc-linux-gnu binutils and
+     NOT compile the 64-bit part if that's not there
+   - Add command to protocol that allows the host to ask: what's the lowest
+     memory address available for me to work with? (to avoid overwriting the
+     debugger)
+   - 386-32 and x64: add command to tell the host where the page tables are
+     and what format.
+   - 386-32: add command to switch on paging. Current code switches on 32-bit
+     mode without paging, which is a good default, but some tests might want
+     paging enabled. If that command is given, drum up some page tables and
+     turn on paging.
+
+Stage 1 loader:
+   - Make an El Torito CD-ROM boot sector, so that you can burn this code
+     to CD-ROM and use it on newer machines where a floppy drive is lacking
+   - ...with script to make an ISO image to test with
+
+Host-side software:
+   - Write Linux user-space program to talk to the client
+   - Turn code into a useful library that you can link into any program you
+     wish to write
+   - Write code to upload various simple tests to test the sanity of the
+     debugger, in each mode
+   - Write simple CPU tests for the various CPUs to make sure it works
+
+Actual hardware:
+   - This code works great with Bochs and VirtualBox. Now... see how well it
+     works on:
+       - Your Intel Quad Core test machine (quadcore51)
+       - Your AMD64 Dual Core (tvtest51)
+       - Your old Pentium laptop (portable51)
+       - Andy's old Pentium laptop
+       - The ancient 386 laptop
+       - That 286 laptop you just got off Ebay
+       - The ancient 8088 XT sitting in your bedroom
+         ^ make sure you test 8086, 286, 386-16, 386-32, and x64 modes on each
+
