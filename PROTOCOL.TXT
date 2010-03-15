@@ -1,0 +1,198 @@
+
+Remote x86 protocol document
+
+
+
+
+This version of remote x86 works over the RS-232 serial port of your computer.
+It's designed to be run on a computer with standard PC/AT compatible ports
+(literally anything from way back in the XT days, to modern hardware) with the
+other end connected to a computer running Linux that tells the client what to
+do.
+
+Serial settings:
+
+   9600 baud
+   odd parity
+   1 stop bit
+
+If you want, and you trust the host to handle it properly, you can up the baud
+rate by changing the divisor constant in global.inc.
+
+
+Commands are basic ASCII text sent over the wire.
+All commands are ASCII words followed by optional additional information.
+All responses are ASCII text starting with "OK" or "ERR" and more info.
+All messages end at the newline '\n'.
+
+Numbers are always passed over the wire in hexadecimal, without the "0x" prefix.
+
+This debugging tool contains code to work with almost every major type of
+CPU out there. It uses as few resources and functions as possible to
+guarantee wide compatibility.
+
+It offers commands to switch the CPU into known modes. It accepts the
+commands on the understanding that the host knows what it's doing, so
+if the CPU does not support that mode, and resets, that's the hosts'
+fault.
+
+
+CPU & Major modes
+8086      16-bit real mode
+286       16-bit protected mode (286)
+386       16-bit protected mode (386)
+386       32-bit protected mode (386)
+x64       64-bit long mode (AMD64/EMT64)
+
+! NOTE: The 64-bit mode is only available if your GNU binutils supports
+        linking elf64-x86-64 targets. The non-64 version will signal that
+        it's still in 8086 mode.
+
+! NOTE: For simplicity's sake, all mode changes must happen from 8086
+        mode. If you changed into 386 16-bit mode, you must change back
+        to 8086 mode before switching to 386 32-bit mode.
+
+
+ * TEST command
+-----------------
+H: TEST
+C: OK
+
+
+ * LOW command
+-----------------
+H: LOW
+C: OK <lowest unused memory address>
+
+The host uses this address to know the lowest unused memory address available,
+so that it can upload data without overwriting the client program.
+
+
+ * Switch to 8086 real mode
+-----------------------------
+H: 8086
+C: OK 8086
+
+Switch the CPU to 16-bit real mode and await further orders
+
+
+ * Switch to 286 protected mode
+---------------------------------
+H: 286
+C: OK 286
+
+Switch the CPU to 286 16-bit protected mode and await further orders.
+Note that the debugger assumes you know what you're doing, if the CPU doesn't support
+protected mode at all (i.e. an 8086/8088) then the CPU will reset and you
+will have to intervene physically. Note that this will work on a 386 or higher.
+
+WARNING: The 286 by design cannot switch back to real mode without a reset.
+         To allow switching back anyhow, this code uses the infamous triple-fault
+         CMOS and BIOS reset trick. Don't be surprised if switching back to 8086
+         mode causes a hard crash on obscure 286 hardware that doesn't support
+         that trick. 386 and higher systems will not have these issues.
+
+ * Switch to 386 protected mode (16-bit)
+------------------------------------------
+H: 386-16
+C: OK 386-16
+
+Switch the CPU to 386 16-bit protected mode and await further orders.
+If the CPU is a 286 or lower, this may crash the computer, or at least cause unpredictable
+results. Paging is disabled, and the IDT is not initialized.
+
+ * Switch to 386 protected mode (32-bit)
+------------------------------------------
+H: 386-32
+C: OK 386-32
+
+Switch the CPU to 386 32-bit protected mode and await further orders.
+This is recommended for general testing on all 32-bit x86 CPUs and it easily opens up
+the entire 4GB range of addressable memory and hardware on the system. If the CPU is
+a 286 or lower this will crash the system. Paging is disabled, and the IDT is not
+initialized.
+
+ * Switch to AMD64/EMT64 long mode (64-bit)
+---------------------------------------------
+H: x64
+C: OK x64
+
+Switch the CPU to 64-bit long mode and await further orders. If your CPU does not
+support long mode this will crash the system, again it's up to you to know what the
+CPU supports.
+
+Due to the requirements of 64-bit mode the code will overwrite the 256KB of memory
+following the program with the 4-level page tables needed by the CPU for this mode.
+The LOW command must be used to know where the page tables end so that you can safely
+upload program code without stomping on them. Page tables are set up to enable access
+directly to the first 64GB of memory.
+
+ * Read memory
+----------------
+H: READ <address> <byte count>
+C: OK <byte> <byte> ...
+
+Read the specified number of bytes from the memory address given and return them as
+hexadecimal digits. The 8086, 286, and x64 modes will let you know if the address is
+out of range.
+
+ * Write memory
+----------------
+H: WRITE <address> <byte> ...
+C: OK
+
+Take the byte values given and write them starting at the given address. The debugger
+does not check whether it overwrites something important, again, know what you're
+doing! The 8086, 286, and x64 modes will notify you if the address is out of range.
+
+ * Read memory binary
+-----------------------
+H: READB <address> <byte count>
+C: OK [binary data]
+
+Read the specified number of bytes and return them directly as binary data. The host
+reading the data is expected to read exactly the number of bytes it asked for, followed
+by a newline.
+
+ * Write memory binary
+------------------------
+H: WRITEB <address> <byte count>
+C: OK Accepted
+
+Write the specified number of bytes. Binary data is accepted immediately after the
+newline, and the host is expected to write exactly the number of bytes given in the
+byte count. When the binary is written, the client will return "OK Accepted"
+
+ * Execute memory (16-bit real mode)
+---------------------------------
+H: EXEC <segment> <offset>
+C: OK Function completed
+
+The debugger makes a FAR call to the address and expects the subroutine to return via RETF.
+
+WARNING: Make sure you upload valid code and give the debugger a valid address. You
+         will not get the "OK" message if your code does not execute or return properly
+
+ * Execute memory (16-bit protected modes)
+---------------------------------
+H: EXEC <base> <offset>
+C: OK Function completed
+
+The 286, and 16-bit 386 modes accept a base and offset pair. The base becomes
+the base address of the code segment the debugger executes your code from. The debugger
+makes a FAR call to the address and expects the subroutine to return via RETF.
+
+WARNING: Make sure you upload valid code and give the debugger a valid address. You
+         will not get the "OK" message if your code does not execute or return properly
+
+ * Execute memory (32-bit and 64-bit modes)
+--------------------------------------------
+H: EXEC <address>
+C: OK Function completed
+
+The 32-bit 386 and x64 64-bit modes accept an address. The debugger makes a NEAR
+call to the address and expects the subroutine to return via RET.
+
+WARNING: Make sure you upload valid code and give the debugger a valid address. You
+         will not get the "OK" message if your code does not execute or return properly
+

@@ -7,17 +7,10 @@ Code consolidation:
    
 Protocol:
    - Type up a document describing the communication protocol
-   - Add makefile code to autodetect presence of x86_64-pc-linux-gnu binutils and
-     NOT compile the 64-bit part if that's not there
+
    - Add command to protocol that allows the host to ask: what's the lowest
      memory address available for me to work with? (to avoid overwriting the
-     debugger)
-   - 386-32 and x64: add command to tell the host where the page tables are
-     and what format.
-   - 386-32: add command to switch on paging. Current code switches on 32-bit
-     mode without paging, which is a good default, but some tests might want
-     paging enabled. If that command is given, drum up some page tables and
-     turn on paging.
+     debugger) [DONE]
 
 Stage 1 loader:
    - Make an El Torito CD-ROM boot sector, so that you can burn this code
@@ -26,10 +19,13 @@ Stage 1 loader:
 
 Host-side software:
    - Write Linux user-space program to talk to the client
+
    - Turn code into a useful library that you can link into any program you
      wish to write
+
    - Write code to upload various simple tests to test the sanity of the
      debugger, in each mode
+
    - Write simple CPU tests for the various CPUs to make sure it works
 
 Actual hardware:
