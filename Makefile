@@ -1,8 +1,10 @@
-all: floppy.bin floppy-x64.bin
+all: floppy.bin floppy-x64.bin cdrom.iso cdrom-x64.iso
 
 stage1-floppy.bin: stage1-floppy.asm
 	nasm -o $@ -f bin $<
 
+stage1-cdrom.bin: stage1-cdrom.asm
+	nasm -o $@ -f bin $<
 
 
 
@@ -36,10 +38,13 @@ stage2-386-32.o: stage2-386-32.asm
 stage2-x64-stub.o: stage2-x64-stub.asm
 	nasm -o $@ -f elf32 $<
 
+cdrom.iso: stage1-cdrom.bin
+	cat stage1-cdrom.bin stage2.bin >cdrom.bin
+	mkisofs -o cdrom.iso -R -J -b cdrom.bin -no-emul-boot -boot-load-seg 0x780 -exclude-list cdrom.exclude .
 
-
-
-
+cdrom-x64.iso: stage1-cdrom.bin
+	cat stage1-cdrom.bin stage2-x64.bin >cdrom-x64.bin
+	mkisofs -o cdrom-x64.iso -R -J -b cdrom-x64.bin -no-emul-boot -boot-load-seg 0x780 -exclude-list cdrom.exclude .
 
 floppy-x64-raw.bin: stage1-floppy.bin stage2-x64.bin
 	./stage1-floppy-patch-sectorcount stage1-floppy.bin stage2-x64.bin
@@ -74,6 +79,6 @@ stage2-x64-x64.o: stage2-x64.asm
 
 
 clean:
-	rm -f *.bin *.o
+	rm -f *.bin *.o *.iso
 	find -name \*~ -delete
 
