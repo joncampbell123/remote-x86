@@ -1,6 +1,10 @@
 use64
 
-IN_BUF_SIZE	equ		256
+%define MAIN_64
+%include "global.inc"
+
+;IN_BUF_SIZE	equ		256
+
 PML2_ENTRIES	equ		16384
 PML4_LOCATION	equ		0x10000							; where we keep the PML4 page
 PML3_LOCATION	equ		PML4_LOCATION + 0x1000					; PML3 where we keep 4 entries for memory ranges 0-4GB
@@ -17,15 +21,14 @@ PML2_LOCATION	equ		PML3_LOCATION + 0x1000					; PML3 is one page long so we stor
 ;  N/A               [2] 3GB            [2] 2MB
 ;  N/A               [3] 4GB            [3] 2MB
 
-CODE_SELECTOR	equ		0x08
-DATA_SELECTOR	equ		0x10
+;CODE_SELECTOR	equ		0x08
+;DATA_SELECTOR	equ		0x10
 
 ; this code is jumped to from the 8086 portion.
 ; you'd better be running this on a 386 or higher because this makes no
 ; attempt to detect whether the CPU actually supports the mode.
 ;
 ; the 8086 portion took care of setting up the UART, we just continue to use it
-extern _jmp_8086
 
 SECTION		.text
 
@@ -102,8 +105,8 @@ _main_loop_command_8086:
 		jnz		.fail
 		; UGH it seems we first have to thunk down to 16-bit protected mode, or else Bochs will continue
 		; executing 32-bit real mode code heee
-		mov		byte [_gdt + CODE_SELECTOR + 6],0x8F		; poof, we're 16-bit
-		mov		byte [_gdt + DATA_SELECTOR + 6],0x8F		; poof, our data segment is 16-bit
+		mov		byte [_gdt_table + CODE_SELECTOR + 6],0x8F		; poof, we're 16-bit
+		mov		byte [_gdt_table + DATA_SELECTOR + 6],0x8F		; poof, our data segment is 16-bit
 		mov		ax,DATA_SELECTOR		; now force the CPU to update by that
 		mov		ds,ax
 		mov		es,ax
@@ -113,8 +116,8 @@ _main_loop_command_8086:
 		dw		CODE_SELECTOR
 .thunk16:
 use16		; switch the CPU back to real mode
-		lgdt		[cs:x_gdtr_old]
-		lidt		[cs:x_idtr_realmode]		; on a 386, we then load a sane IDT for real mode
+		lgdt		[cs:_gdtr_old]
+		lidt		[cs:_idtr_realmode]		; on a 386, we then load a sane IDT for real mode
 		xor		eax,eax				; turn off protected mode
 		mov		cr0,eax
 		jmp		0x0000:word .realmode
@@ -378,17 +381,17 @@ strtohex:	push		rbx
 		ret
 
 ; hello
-hello_msg:	db		'Stage 2 active.',13,10,0
-ask_comport:	db		'Choose COM port: [1] 3F8   [2] 2F8   [3] 3E8   [4] 2E8',13,10,0
-address_invalid_msg: db		'Invalid address',0
-unknown_command_msg: db		'Unknown command',13,10,0
-announcing_comport: db		'Using com port at ',0
-write_complete_msg: db		'Accepted',0
-exec_complete_msg: db		'Function complete',0
-test_response:	db		'Test successful',0
-err_head:	db		'ERR ',0
-ok_head:	db		'OK ',0
-crlf:		db		13,10,0
+;hello_msg:	db		'Stage 2 active.',13,10,0
+;ask_comport:	db		'Choose COM port: [1] 3F8   [2] 2F8   [3] 3E8   [4] 2E8',13,10,0
+;address_invalid_msg: db		'Invalid address',0
+;unknown_command_msg: db		'Unknown command',13,10,0
+;announcing_comport: db		'Using com port at ',0
+;write_complete_msg: db		'Accepted',0
+;exec_complete_msg: db		'Function complete',0
+;test_response:	db		'Test successful',0
+;err_head:	db		'ERR ',0
+;ok_head:	db		'OK ',0
+;crlf:		db		13,10,0
 
 ; scan DS:SI forward to skip whitespace
 str_skip_whitespace:
@@ -461,18 +464,6 @@ com_str_oute:	pop		rax
 		pop		rsi
 		ret
 
-; strings
-extern hexdigits
-note_x64:	db		'x64',0
-
-; variables
-inited		db		0
-extern comport
-; comport	dw
-
-; input buffer
-in_buf		times IN_BUF_SIZE db 0
-
 ; we are jumped to from the 8086 loader, so this part is real-mode code
 global _jmp_x64
 use16			; <- Woo! Nasm lets me use 16-bit code in an ELF64 object file!
@@ -484,14 +475,14 @@ _jmp_x64:	cli
 		mov		ss,ax
 		mov		sp,0x7BF0
 
-		mov		word [x_gdtr_32],0xFFFF	; limit
-		mov		dword [x_gdtr_32+2],_gdt ; offset
+		mov		word [_gdtr],0xFFFF	; limit
+		mov		dword [_gdtr+2],_gdt_table ; offset
 		call		gen_gdt_32
 
-		sidt		[x_idtr_realmode]
+		sidt		[_idtr_realmode]
 
-		sgdt		[x_gdtr_old]
-		lgdt		[x_gdtr_32]
+		sgdt		[_gdtr_old]
+		lgdt		[_gdtr]
 
 		mov		eax,0x00000001
 		mov		cr0,eax			; enable protected mode but NOT paging
@@ -509,7 +500,7 @@ use32
 ; update the GDT to enable long mode when we jump.
 ; in the mean time the cached segment registers we're using still reflect 32-bit code+data,
 ; just DON'T RELOAD THEM!
-		mov		edi,_gdt
+		mov		edi,_gdt_table
 		mov		byte [edi + CODE_SELECTOR + 6],0xAF		; D=0 L=1 64-bit code
 		mov		byte [edi + DATA_SELECTOR + 6],0xAF		; D=0 L=1 64-bit data
 
@@ -602,7 +593,7 @@ use64
 
 ; generate 386 GDT
 use16
-gen_gdt_32:	mov		di,_gdt
+gen_gdt_32:	mov		di,_gdt_table
 		cld
 		xor		ax,ax
 ; #0 NULL entry
@@ -643,13 +634,8 @@ gen_gdt_32:	mov		di,_gdt
 ; done
 		ret
 
-x_gdtr_old:	dd		0,0
-x_gdtr_32:	dd		0,0
-x_gdtr_64:	dd		0,0,0,0,0,0,0,0		; <- how long is it?
-x_idtr_realmode:dd		0,0
+; strings
+note_x64:	db		'x64',0
 
 align		16
-_gdt		times (32 * 8) db 0
-
-extern _jmp_8086
 

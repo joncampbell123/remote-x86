@@ -1,18 +1,12 @@
 
-IN_BUF_SIZE	equ		256
-GDT_ENTRIES	equ		32
-
-USER_CODE_SELECTOR	equ		0x20			; used by EXEC to run user code in it's own segment
-ACCESS_SELECTOR		equ		0x18			; used by READ/WRITE commands because 286 segments are limited to 64KB
-DATA_SELECTOR		equ		0x10
-CODE_SELECTOR		equ		0x08
+%define MAIN_286
+%include "global.inc"
 
 ; this code is jumped to from the 8086 portion.
 ; you'd better be running this on a 286 or higher because this makes no
 ; attempt to detect whether the CPU actually supports the mode.
 ;
 ; the 8086 portion took care of setting up the UART, we just continue to use it
-extern _jmp_8086
 
 ; known issues:
 ;
@@ -118,7 +112,7 @@ _main_loop_command_8086:
 		and		al,0xFE				; turn off protected mode
 		mov		cr0,eax
 		; real mode, reload sectors
-.realmode:	mov		ax,[_orig_cs]
+.realmode:	xor		ax,ax
 		mov		ds,ax
 		mov		es,ax
 		mov		ss,ax
@@ -457,17 +451,17 @@ strtohex_32:	push		bx
 		ret
 
 ; hello
-hello_msg:	db		'Stage 2 active.',13,10,0
-ask_comport:	db		'Choose COM port: [1] 3F8   [2] 2F8   [3] 3E8   [4] 2E8',13,10,0
-address_invalid_msg: db		'Invalid address',0
-unknown_command_msg: db		'Unknown command',13,10,0
-announcing_comport: db		'Using com port at ',0
-write_complete_msg: db		'Accepted',0
-exec_complete_msg: db		'Function complete',0
-test_response:	db		'Test successful',0
-err_head:	db		'ERR ',0
-ok_head:	db		'OK ',0
-crlf:		db		13,10,0
+;hello_msg:	db		'Stage 2 active.',13,10,0
+;ask_comport:	db		'Choose COM port: [1] 3F8   [2] 2F8   [3] 3E8   [4] 2E8',13,10,0
+;address_invalid_msg: db		'Invalid address',0
+;unknown_command_msg: db		'Unknown command',13,10,0
+;announcing_comport: db		'Using com port at ',0
+;write_complete_msg: db		'Accepted',0
+;exec_complete_msg: db		'Function complete',0
+;test_response:	db		'Test successful',0
+;err_head:	db		'ERR ',0
+;ok_head:	db		'OK ',0
+;crlf:		db		13,10,0
 
 ; pump the access base up 64K
 acc286_64k_bump:
@@ -592,18 +586,6 @@ com_str_oute:	pop		ax
 		pop		si
 		ret
 
-; strings
-extern hexdigits
-note_286:	db		'286',0
-
-; variables
-inited		db		0
-extern comport
-; comport	dw
-
-; input buffer
-in_buf		times IN_BUF_SIZE db 0
-
 ; generate 286 GDT
 gen_gdt_286:	mov		di,_gdt_table
 		cld
@@ -695,7 +677,6 @@ _jmp_286:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		mov		ax,cs
 		mov		ds,ax
 		mov		ss,ax
-		mov		[_orig_cs],ax
 		mov		sp,7BFCh
 		mov		si,ok_head
 		call		com_str_out
@@ -720,12 +701,19 @@ _jmp_286:	cli					; NO INTERRUPTS! We're not prepared to handle them
 
 ; GDT table needed for protected mode
 align		16
-_orig_cs	dw		0
-_gdt_table:	times (8 * GDT_ENTRIES) db 0
-_gdtr_old	dd		0,0
+global _gdtr
 _gdtr		dd		0,0
+global _gdtr_old
+_gdtr_old	dd		0,0
+global _idtr_brainfuck
 _idtr_brainfuck:dd		0,0
+global _idtr_realmode
 _idtr_realmode:	dd		0x400-1,0
+global _gdt_table
+_gdt_table:	times (8 * GDT_ENTRIES) db 0
+
+; strings
+note_286:	db		'286',0
 
 ; this must finish on a paragraph.
 ; when this and other images are catencated together this ensures each one can safely

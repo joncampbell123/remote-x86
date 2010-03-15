@@ -1,5 +1,6 @@
 
-IN_BUF_SIZE	equ		256
+%define MAIN_SRC
+%include "global.inc"
 
 ; stage1 executes us within our own segment, 16-bit real mode
 ; when linked together, this must be FIRST!
@@ -19,8 +20,6 @@ use16
 
 SECTION		.text
 global		_start
-
-BAUD_DIVISOR	equ		(115200/12)	; 9600
 
 ; code starts here
 _start:		push		cs
@@ -570,15 +569,7 @@ strtohex_32:	push		bx
 ; hello
 hello_msg:	db		'Stage 2 active.',13,10,0
 ask_comport:	db		'Choose COM port: [1] 3F8   [2] 2F8   [3] 3E8   [4] 2E8',13,10,0
-address_invalid_msg: db		'Invalid address',0
-unknown_command_msg: db		'Unknown command',13,10,0
 announcing_comport: db		'Using com port at ',0
-write_complete_msg: db		'Accepted',0
-exec_complete_msg: db		'Function complete',0
-test_response:	db		'Test successful',0
-err_head:	db		'ERR ',0
-ok_head:	db		'OK ',0
-crlf:		db		13,10,0
 
 ; convert physical addr DX:AX to real-mode address DX:AX
 ;
@@ -711,18 +702,11 @@ com_str_oute:	pop		ax
 		ret
 
 ; strings
-global hexdigits
-hexdigits:	db		'0123456789ABCDEF'
 comports:	dw		0x3F8,0x2F8,0x3E8,0x2E8
 note_8086:	db		'8086',0
+inited		db		0
 
 ; variables
-inited		db		0
-global comport
-comport		dw		0
-
-; input buffer
-in_buf		times IN_BUF_SIZE db 0
 
 ; jump here
 global _jmp_8086
@@ -741,10 +725,38 @@ _jmp_8086:	cli
 		call		com_str_out
 		jmp		_main_loop
 
-; this must finish on a paragraph.
-; when this and other images are catencated together this ensures each one can safely
-; run from it's own 16-bit segment.
-align		16
+global address_invalid_msg
+address_invalid_msg: 	db		'Invalid address',0
+
+global unknown_command_msg
+unknown_command_msg: 	db		'Unknown command',13,10,0
+
+global write_complete_msg
+write_complete_msg: 	db		'Accepted',0
+
+global exec_complete_msg
+exec_complete_msg:	 db		'Function complete',0
+
+global test_response
+test_response:		db		'Test successful',0
+
+global err_head
+err_head:		db		'ERR ',0
+
+global ok_head
+ok_head:		db		'OK ',0
+
+global crlf
+crlf:			db		13,10,0
+
+global hexdigits
+hexdigits:		db		'0123456789ABCDEF'
+
+global comport
+comport			dw		0
+
+global in_buf
+in_buf			times IN_BUF_SIZE db 0
 
 ; other modules
 extern _jmp_286
@@ -752,3 +764,4 @@ extern _jmp_386_16
 extern _jmp_386_32
 extern _jmp_x64
 
+			align		16
