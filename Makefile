@@ -15,8 +15,11 @@ floppy-raw.bin: stage1-floppy.bin stage2.bin
 floppy.bin: floppy-raw.bin
 	(cat $< && cat /dev/zero) | dd of=$@ bs=512 count=2880
 
-stage2.bin: stage2-8086.o stage2-286.o stage2-386-16.o stage2-386-32.o stage2-x64-stub.o
+stage2.bin: stage2-8086.o stage2-286.o stage2-386-16.o stage2-386-32.o stage2-x64-stub.o end.o
 	./assemble-stage2.sh
+
+end.o: end.asm
+	nasm -o $@ -f elf32 $<
 
 stage2-8086.o: stage2-8086.asm
 	nasm -o $@ -f elf32 $<
@@ -45,8 +48,11 @@ floppy-x64-raw.bin: stage1-floppy.bin stage2-x64.bin
 floppy-x64.bin: floppy-x64-raw.bin
 	(cat $< && cat /dev/zero) | dd of=$@ bs=512 count=2880
 
-stage2-x64.bin: stage2-x64-8086.o stage2-x64-286.o stage2-x64-386-16.o stage2-x64-386-32.o stage2-x64-x64.o
+stage2-x64.bin: stage2-x64-8086.o stage2-x64-286.o stage2-x64-386-16.o stage2-x64-386-32.o stage2-x64-x64.o end-x64.o
 	./assemble-stage2-x64.sh
+
+end-x64.o: end.asm
+	nasm -o $@ -f elf64 $<
 
 stage2-x64-8086.o: stage2-8086.asm
 	nasm -o $@ -f elf64 $<

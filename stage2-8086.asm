@@ -1,4 +1,5 @@
 
+%define MAIN_16_BIT
 %define MAIN_SRC
 %include "global.inc"
 
@@ -165,10 +166,28 @@ _main_loop_command:
 		call		_main_loop_command_386_16	; ..."386-16"
 		call		_main_loop_command_286		; ..."286"
 		call		_main_loop_command_8086		; ..."8086"
+		call		_main_loop_command_low		; ..."LOW"
 
 ; we didn't understand the message
 		stc
 		ret
+
+; low
+_main_loop_command_low:
+		cmp		word [si],'LO'
+		jnz		.fail
+		cmp		byte [si+2],'W'
+		jnz		.fail
+		cmp		byte [si+3],0
+		jnz		.fail
+		pop		ax
+		mov		si,ok_head
+		call		com_str_out
+		mov		ax,last_byte
+		call		com_hex_out
+		mov		si,crlf
+		call		com_str_out
+.fail:		ret
 
 ; x64
 _main_loop_command_x64:
@@ -257,8 +276,9 @@ _main_loop_command_exec:
 
 .fail:		ret
 
+global _command_exec_far_ptr
 _command_exec_far_ptr:
-		dw		0,0
+		dw		0,0,0,0,0
 
 ; WRITE command
 _main_loop_command_write:
@@ -625,7 +645,24 @@ puthex_digit:	push		ax
 		pop		ax
 		ret
 
+; print a hex number in AX
+puthex:		push		ax				; AX = 1234
+		push		cx
+		mov		cl,4
+		rol		ax,cl				; AX = 2341
+		call		puthex_digit
+		rol		ax,cl				; AX = 3412
+		call		puthex_digit
+		rol		ax,cl				; AX = 4123
+		call		puthex_digit
+		rol		ax,cl				; AX = 1234
+		call		puthex_digit
+		pop		cx
+		pop		ax
+		ret
+
 ; print a hexadecimal digit in AL
+global com_puthex_digit
 com_puthex_digit:
 		push		ax
 		push		bx
@@ -638,28 +675,37 @@ com_puthex_digit:
 		ret
 
 ; print a hex number in AX
-puthex:		push		ax				; AX = 1234
-		rol		ax,4				; AX = 2341
-		call		puthex_digit
-		rol		ax,4				; AX = 3412
-		call		puthex_digit
-		rol		ax,4				; AX = 4123
-		call		puthex_digit
-		rol		ax,4				; AX = 1234
-		call		puthex_digit
+global com_hex8_out
+com_hex8_out:	push		ax				; AX = 1234
+		push		cx
+		mov		cl,4
+		rol		al,cl				; AX = 2341
+		call		com_puthex_digit
+		rol		al,cl				; AX = 3412
+		call		com_puthex_digit
+		pop		cx
 		pop		ax
 		ret
 
 ; print a hex number in AX
-com_hex8_out:	push		ax				; AX = 1234
-		rol		al,4				; AX = 2341
+global com_hex_out
+com_hex_out:	push		ax				; AX = 1234
+		push		cx
+		mov		cl,4
+		rol		ax,cl				; AX = 2341
 		call		com_puthex_digit
-		rol		al,4				; AX = 3412
+		rol		ax,cl				; AX = 3412
 		call		com_puthex_digit
+		rol		ax,cl				; AX = 4123
+		call		com_puthex_digit
+		rol		ax,cl				; AX = 1234
+		call		com_puthex_digit
+		pop		cx
 		pop		ax
 		ret
 
 ; read one byte from the comport
+global com_char_in
 com_char_in:	push		dx
 		mov		dx,[comport]
 		add		dx,5				; DX = Line status register
@@ -673,6 +719,7 @@ com_char_in_wait:
 		ret
 
 ; write one byte to the comport from AL
+global com_char_out
 com_char_out:	push		dx
 		push		ax
 		push		cx
@@ -690,6 +737,7 @@ com_char_out_wait:
 		pop		dx
 		ret
 
+global com_str_out
 com_str_out:	push		si
 		push		ax
 com_str_outl:	lodsb

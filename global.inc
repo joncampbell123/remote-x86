@@ -21,6 +21,17 @@ extern hexdigits
 extern comport
 extern in_buf
 extern _jmp_8086
+extern _command_exec_far_ptr
+
+%ifdef MAIN_16_BIT
+extern com_puthex_digit
+extern com_hex8_out
+extern com_hex_out
+extern com_char_in
+extern com_char_out
+extern com_str_out
+%endif
+
 %endif
 
 %ifndef MAIN_286
@@ -30,4 +41,6 @@ extern _gdt_table
 extern _idtr_brainfuck
 extern _idtr_realmode
 %endif
+
+extern last_byte
 

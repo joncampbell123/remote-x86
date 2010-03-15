@@ -1,4 +1,5 @@
 
+%define MAIN_16_BIT
 %define MAIN_286
 %include "global.inc"
 
@@ -81,10 +82,28 @@ _main_loop_command:
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
 		call		_main_loop_command_8086		; ..."8086"
+		call		_main_loop_command_low		; ..."LOW"
 
 ; we didn't understand the message
 		stc
 		ret
+
+; low
+_main_loop_command_low:
+		cmp		word [si],'LO'
+		jnz		.fail
+		cmp		byte [si+2],'W'
+		jnz		.fail
+		cmp		byte [si+3],0
+		jnz		.fail
+		pop		ax
+		mov		si,ok_head
+		call		com_str_out
+		mov		ax,last_byte
+		call		com_hex_out
+		mov		si,crlf
+		call		com_str_out
+.fail:		ret
 
 ; 8086
 _main_loop_command_8086:
@@ -148,9 +167,6 @@ _main_loop_command_exec:
 		jmp		_main_loop_command_response_output
 
 .fail:		ret
-
-_command_exec_far_ptr:
-		dw		0,0
 
 ; WRITE command
 _main_loop_command_write:
@@ -523,6 +539,7 @@ str_skip_whitespace:
 .skip:		inc		si
 		jmp		str_skip_whitespace
 
+%ifdef XXX
 ; print a hexadecimal digit in AL
 com_puthex_digit:
 		push		ax
@@ -585,6 +602,7 @@ com_str_outl:	lodsb
 com_str_oute:	pop		ax
 		pop		si
 		ret
+%endif
 
 ; generate 286 GDT
 gen_gdt_286:	mov		di,_gdt_table

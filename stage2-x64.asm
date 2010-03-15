@@ -13,6 +13,7 @@ PML2_LOCATION	equ		PML3_LOCATION + 0x1000					; PML3 is one page long so we stor
 											; correllation between memory and entry. 4 * 512 * 8 = 16384 bytes to cover
 											; 16384/8 * 2MB = 2048 * 2MB = 4GB
 											; UPDATE: We can up that to 256KB to cover the entire 64GB range on current hardware :)
+FINAL_LOW	equ		PML2_LOCATION + (256 * 1024)
 
 ; just enough to cover 4GB. We use 2MB large pages for extra laziness.
 ; PML4              PML3               PML2
@@ -92,10 +93,28 @@ _main_loop_command:
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
 		call		_main_loop_command_8086		; ..."8086"
+		call		_main_loop_command_low		; ..."LOW"
 
 ; we didn't understand the message
 		stc
 		ret
+
+; low
+_main_loop_command_low:
+		cmp		word [rsi],'LO'
+		jnz		.fail
+		cmp		byte [rsi+2],'W'
+		jnz		.fail
+		cmp		byte [rsi+3],0
+		jnz		.fail
+		pop		rax
+		mov		rsi,ok_head
+		call		com_str_out
+		mov		rax,FINAL_LOW
+		call		com_hex_out
+		mov		rsi,crlf
+		call		com_str_out
+.fail:		ret
 
 ; 8086
 _main_loop_command_8086:
@@ -418,6 +437,43 @@ com_hex8_out:	push		rax				; AX = 1234
 		rol		al,4				; AX = 2341
 		call		com_puthex_digit
 		rol		al,4				; AX = 3412
+		call		com_puthex_digit
+		pop		rax
+		ret
+
+; print a hex number in AX
+com_hex_out:	push		rax				; AX = 1234
+		rol		rax,4				; AX = 2341
+		call		com_puthex_digit
+		rol		rax,4				; AX = 3412
+		call		com_puthex_digit
+		rol		rax,4				; AX = 4123
+		call		com_puthex_digit
+		rol		rax,4				; AX = 1234
+		call		com_puthex_digit
+		rol		rax,4				; AX = 2341
+		call		com_puthex_digit
+		rol		rax,4				; AX = 3412
+		call		com_puthex_digit
+		rol		rax,4				; AX = 4123
+		call		com_puthex_digit
+		rol		rax,4				; AX = 1234
+		call		com_puthex_digit
+		rol		rax,4				; AX = 2341
+		call		com_puthex_digit
+		rol		rax,4				; AX = 3412
+		call		com_puthex_digit
+		rol		rax,4				; AX = 4123
+		call		com_puthex_digit
+		rol		rax,4				; AX = 1234
+		call		com_puthex_digit
+		rol		rax,4				; AX = 2341
+		call		com_puthex_digit
+		rol		rax,4				; AX = 3412
+		call		com_puthex_digit
+		rol		rax,4				; AX = 4123
+		call		com_puthex_digit
+		rol		rax,4				; AX = 1234
 		call		com_puthex_digit
 		pop		rax
 		ret

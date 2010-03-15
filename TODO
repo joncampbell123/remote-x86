@@ -3,7 +3,7 @@ Code consolidation:
    For 8086, 286, and 386-16 code:
      Consolidate con_char_in and con_char_out, they all work the
      same and make no segment references, they only assume that DS
-     is set properly.
+     is set properly. [DONE]
    
 Protocol:
    - Type up a document describing the communication protocol

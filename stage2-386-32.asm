@@ -1,7 +1,7 @@
 ; ----------------32-bit code here-------------------
 use32
 
-%define MAIN_386
+%define MAIN_386_32
 %include "global.inc"
 
 ; this code is jumped to from the 8086 portion.
@@ -81,10 +81,28 @@ _main_loop_command:
 		call		_main_loop_command_writeb	; ..."WRITEB"
 		call		_main_loop_command_exec		; ..."EXEC"
 		call		_main_loop_command_8086		; ..."8086"
+		call		_main_loop_command_low		; ..."LOW"
 
 ; we didn't understand the message
 		stc
 		ret
+
+; low
+_main_loop_command_low:
+		cmp		word [esi],'LO'
+		jnz		.fail
+		cmp		byte [esi+2],'W'
+		jnz		.fail
+		cmp		byte [esi+3],0
+		jnz		.fail
+		pop		eax
+		mov		esi,ok_head
+		call		com_str_out
+		mov		eax,last_byte
+		call		com_hex_out
+		mov		esi,crlf
+		call		com_str_out
+.fail:		ret
 
 ; 8086
 _main_loop_command_8086:
@@ -395,6 +413,27 @@ com_hex8_out:	push		ax				; AX = 1234
 		rol		al,4				; AX = 3412
 		call		com_puthex_digit
 		pop		ax
+		ret
+
+; print a hex number in AX
+com_hex_out:	push		eax				; AX = 1234
+		rol		eax,4				; AX = 2341
+		call		com_puthex_digit
+		rol		eax,4				; AX = 3412
+		call		com_puthex_digit
+		rol		eax,4				; AX = 4123
+		call		com_puthex_digit
+		rol		eax,4				; AX = 1234
+		call		com_puthex_digit
+		rol		eax,4				; AX = 2341
+		call		com_puthex_digit
+		rol		eax,4				; AX = 3412
+		call		com_puthex_digit
+		rol		eax,4				; AX = 4123
+		call		com_puthex_digit
+		rol		eax,4				; AX = 1234
+		call		com_puthex_digit
+		pop		eax
 		ret
 
 ; read one byte from the comport
