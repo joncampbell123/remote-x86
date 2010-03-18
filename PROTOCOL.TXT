@@ -127,6 +127,11 @@ The LOW command must be used to know where the page tables end so that you can s
 upload program code without stomping on them. Page tables are set up to enable access
 directly to the first 64GB of memory.
 
+If the binary image was built without the 64-bit portion this command will return
+instead with "OK 8086" to indicate that it never left 8086 mode. This can happen
+if the x86_64-pc-linux-gnu binutils was not available on the computer used to
+compile it.
+
  * Read memory
 ----------------
 H: READ <address> <byte count>
