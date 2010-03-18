@@ -1,4 +1,5 @@
 all: floppy.bin floppy-x64.bin cdrom.iso cdrom-x64.iso
+	make -C eth
 
 stage1-floppy.bin: stage1-floppy.asm
 	nasm -o $@ -f bin $<
@@ -81,4 +82,5 @@ stage2-x64-x64.o: stage2-x64.asm
 clean:
 	rm -f *.bin *.o *.iso
 	find -name \*~ -delete
+	make -C eth clean
 

@@ -40,3 +40,50 @@ program as well, since the previous contents are not cleared.
 You will need NASM. Some optional parts are written in C, if
 those parts are attached, you will need GCC as well.
 
+The default compile will omit AMD64 long mode on 32-bit hosts,
+due to limitations in the elf32 linker. If you want AMD64
+support you will need to compile and install a build of binutils
+that targets x86_64-pc-linux-gnu.
+
+Each build starts in 8086 real mode, and accepts commands to
+switch into other CPU modes. No checkers are made to see if the
+CPU supports it, it is expected that you know how to check and
+decide for yourself. Know what you're doing.
+
+----------------------------------------------------------------
+
+MAIN BUILD:
+    stage1*            floppy and El Torito bootable CD-ROM stage 1
+    stage2*            actual payload, the debugger
+
+    The main build requires that the computer you are running it
+on have a working RS-232 serial port at the standard PC/XT/AT
+locations (COM1 on 0x3F8, etc). Most pre-Pentium II laptops made
+prior to 1999 and almost all desktops have this, so it should be
+workable. If not, see the alternative versions below.
+
+----------------------------------------------------------------
+
+Ethernet build: (eth)
+
+    stage1*            floppy and El Torito bootable CD-ROM stage 1
+    stage2*            actual payload, the debugger
+
+    This build is intended for laptops where RS-232 ports are
+lacking or inaccessible, using instead the onboard ethernet controller.
+Debugging is carried on over a low level packet protocol instead.
+The host machine is expected to be connected directly to the machine
+or through as few routers/hubs as possible.
+
+    Unlike the main build, this version requires a 386 or higher,
+it will not run on anything older. This restriction is intentional,
+since every pre-1999 laptop I own either has a RS-232 serial port on
+the back or makes it available through the docking port, while newer
+laptops do not (and therefore need the use of this build). This
+restriction also aids development since I can write the drivers in
+32-bit C rather than try to write complex network drivers in assembly
+language.
+
+    Obviously, for this to work the build must contain at least
+one device driver that knows your hardware.
+
