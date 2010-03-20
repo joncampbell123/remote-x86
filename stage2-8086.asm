@@ -73,13 +73,12 @@ ask_loop:
 		mov		ax,BAUD_DIVISOR
 		out		dx,al
 		inc		dx
-		mov		cl,8			; remember this might run on an 8086 which doesn't have shr reg,imm
-		shr		ax,cl			; >>= 8
+		xchg		al,ah
 		out		dx,al			; DLAB high
 
 		mov		dx,[comport]
 		add		dx,3			; line control register
-		mov		al,(1 << 3) | 3;	; odd parity 8 bits
+		mov		al,3			; 8 bits no parity
 		out		dx,al
 
 		mov		dx,[comport]

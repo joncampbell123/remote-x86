@@ -87,3 +87,11 @@ language.
     Obviously, for this to work the build must contain at least
 one device driver that knows your hardware.
 
+----------------------------------------------------------------
+
+The communication library and software are in the comm directory.
+Simply tell it which communications device to use (linux serial
+ports are named /dev/ttyS0, /dev/ttyS1, etc.) and it will do the
+rest.
+
+
