@@ -590,16 +590,18 @@ void net_on_arp(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 
 void net_on_ipv4_icmp(struct ethernet_frame_header *eth,unsigned char *src_ip,unsigned char *pkt,int len) {
 	unsigned int i;
-	uint16_t chksum = 0;
+	uint32_t chksum = 0;
 	uint16_t *pkt16 = (uint16_t*)pkt;
 	if (len < 8) return;
 	for (i=0;i < (len>>1);i++) {
 		if (i != 1) {
 			uint16_t wd = ntoh16(pkt16[i]);
-			chksum += wd; /* <- FIXME: Wait... what? */
+			chksum += wd;
+			chksum += chksum >> 16;
+			chksum &= 0xFFFF;
 		}
 	}
-	chksum = ~chksum;
+	chksum = (~chksum) & 0xFFFF;
 	uint16_t hdr_chksum = ntoh16(pkt16[1]);
 
 	if (chksum != hdr_chksum)
@@ -640,7 +642,9 @@ void net_on_ipv4_icmp(struct ethernet_frame_header *eth,unsigned char *src_ip,un
 		for (i=0;i < (20>>1);i++) {
 			if (i != 5) {
 				uint16_t wd = ntoh16(ret_pkt16[i]);
-				chksum += wd + (wd>>15); /* <- FIXME: this is right? */
+				chksum += wd;
+				chksum += chksum >> 16;
+				chksum &= 0xFFFF;
 			}
 		}
 		uint16_t ret_hdr_chksum = ~chksum;
@@ -657,7 +661,9 @@ void net_on_ipv4_icmp(struct ethernet_frame_header *eth,unsigned char *src_ip,un
 		for (i=0;i < (20>>1);i++) {
 			if (i != 1) {
 				uint16_t wd = ntoh16(ret_pkt16[i]);
-				chksum += wd; /* <- FIXME: this is right? */
+				chksum += wd;
+				chksum += chksum >> 16;
+				chksum &= 0xFFFF;
 			}
 		}
 		ret_hdr_chksum = ~chksum;
@@ -675,19 +681,26 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 	unsigned int hdr_len = (pkt[0]&0xF) * 4;
 	if (hdr_len < 20) return;
 
-	uint16_t chksum = 0;
+	uint32_t chksum = 0;
 	uint16_t *pkt16 = (uint16_t*)pkt;
 	for (i=0;i < (hdr_len>>1);i++) {
 		if (i != 5) {
 			uint16_t wd = ntoh16(pkt16[i]);
-			chksum += wd + (wd>>15); /* <- FIXME: this is right? */
+			chksum += wd;
+			chksum += chksum >> 16;
+			chksum &= 0xFFFF;
 		}
 	}
-	chksum = ~chksum;
+	chksum = (~chksum) & 0xFFFF;
 	uint16_t hdr_chksum = ntoh16(pkt16[5]);
 
-	if (chksum != hdr_chksum)
+	if (chksum != hdr_chksum) {
+		vga_write_hex(hdr_chksum);
+		vga_writechar(' ');
+		vga_write_hex(chksum);
+		vga_write("\r\n");
 		return;
+	}
 
 	unsigned int total_len = ntoh16(pkt16[1]);
 
@@ -718,20 +731,6 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 
 	if (proto == IPv4_PROTO_ICMP)
 		net_on_ipv4_icmp(eth,src_ip,data,data_len);
-
-#if 0
-	vga_write_hex(data_len);
-	vga_writechar('-');
-	vga_write_hex(chksum);
-	vga_writechar('-');
-	vga_write_hex(hdr_chksum);
-	vga_writechar(' ');
-	vga_write_hex(flags);
-	vga_writechar(' ');
-
-	vga_write_hex(proto);
-	vga_write("\r\n");
-#endif
 }
 
 void net_idle() {
