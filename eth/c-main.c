@@ -586,6 +586,88 @@ void net_on_arp(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 		net_on_arp_IPv4(eth,arp,pkt,sz);
 }
 
+#define IPv4_PROTO_ICMP		0x01
+
+void net_on_ipv4_icmp(struct ethernet_frame_header *eth,unsigned char *src_ip,unsigned char *pkt,int len) {
+	unsigned int i;
+	uint16_t chksum = 0;
+	uint16_t *pkt16 = (uint16_t*)pkt;
+	if (len < 8) return;
+	for (i=0;i < (len>>1);i++) {
+		if (i != 1) {
+			uint16_t wd = ntoh16(pkt16[i]);
+			chksum += wd; /* <- FIXME: Wait... what? */
+		}
+	}
+	chksum = ~chksum;
+	uint16_t hdr_chksum = ntoh16(pkt16[1]);
+
+	if (chksum != hdr_chksum)
+		return;
+
+	unsigned char type = pkt[0];
+	unsigned char code = pkt[1];
+	uint16_t id = *((uint16_t*)(pkt+4));
+	uint16_t seq = *((uint16_t*)(pkt+6));
+
+	if (type == 8 && code == 0) { /* ICMP echo request */
+		vga_write("ICMP echo request, sending reply\r\n");
+
+		struct ethernet_frame_header ret_eth;
+		ret_eth.type = hton16(ETH_TYPE_IPv4);
+		memcpy(ret_eth.dst_mac,eth->src_mac,6);
+		memcpy(ret_eth.src_mac,my_eth_mac,6);
+
+		unsigned int ipv4_len = 0x14+len;
+		unsigned char *ret_pkt = chosen_net_drv->prepare_send_packet(0x14+len,&ret_eth);
+		if (ret_pkt == NULL) {
+			vga_write("ARP: cannot construct packet to answer\r\n");
+			return;
+		}
+
+		memset(ret_pkt,0,0x14+len);
+		ret_pkt[0] = 0x45;	/* IPv4 5 words */
+		ret_pkt[2] = ipv4_len >> 8;
+		ret_pkt[3] = ipv4_len;
+		ret_pkt[6] = (2 << 5);	/* DF don't fragment */
+		ret_pkt[8] = 0x40;	/* TTL */
+		ret_pkt[9] = 0x01;	/* ICMP */
+		memcpy(ret_pkt+12,my_ipv4_address,4);
+		memcpy(ret_pkt+16,src_ip,4);
+
+		chksum = 0;
+		uint16_t *ret_pkt16 = (uint16_t*)ret_pkt;
+		for (i=0;i < (20>>1);i++) {
+			if (i != 5) {
+				uint16_t wd = ntoh16(ret_pkt16[i]);
+				chksum += wd + (wd>>15); /* <- FIXME: this is right? */
+			}
+		}
+		uint16_t ret_hdr_chksum = ~chksum;
+		ret_pkt[10] = ret_hdr_chksum >> 8;
+		ret_pkt[11] = ret_hdr_chksum;
+
+		unsigned char *icmp = ret_pkt + 0x14;
+		icmp[0] = 0x00;		/* echo reply */
+		icmp[1] = 0x00;		/* echo reply */
+		memcpy(icmp+4,pkt+4,len-4);
+
+		chksum = 0;
+		ret_pkt16 = (uint16_t*)(icmp);
+		for (i=0;i < (20>>1);i++) {
+			if (i != 1) {
+				uint16_t wd = ntoh16(ret_pkt16[i]);
+				chksum += wd; /* <- FIXME: this is right? */
+			}
+		}
+		ret_hdr_chksum = ~chksum;
+		icmp[2] = ret_hdr_chksum >> 8;
+		icmp[3] = ret_hdr_chksum;
+
+		chosen_net_drv->send_packet();
+	}
+}
+
 void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 	unsigned int i;
 	if (sz < 20) return;
@@ -598,16 +680,19 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 	for (i=0;i < (hdr_len>>1);i++) {
 		if (i != 5) {
 			uint16_t wd = ntoh16(pkt16[i]);
-			chksum += wd + (wd>>15);
+			chksum += wd + (wd>>15); /* <- FIXME: this is right? */
 		}
 	}
 	chksum = ~chksum;
 	uint16_t hdr_chksum = ntoh16(pkt16[5]);
 
-	unsigned int total_len = pkt16[1];
+	if (chksum != hdr_chksum)
+		return;
+
+	unsigned int total_len = ntoh16(pkt16[1]);
 
 	unsigned char flags = pkt[6] >> 5;
-	uint16_t frag_offset = (((uint16_t)pkt[6]) & 0x1F) | (((uint16_t)pkt[7]) << 5);
+	uint16_t frag_offset = (((uint16_t)pkt[6]) & 0x1F) | (((uint16_t)pkt[7]) << 5); /* <- FIXME: is this right? */
 	unsigned char proto = pkt[9];
 	unsigned char *src_ip = pkt+12;
 	unsigned char *dst_ip = pkt+16;
@@ -619,7 +704,24 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 		return;	
 	if (frag_offset != 0)	/* fragment offset implies fragmented packet */
 		return;
+	if (hdr_len > sz)
+		return;
+	if (hdr_len > total_len)
+		return;
+	if (total_len > sz)
+		return;
 
+	unsigned char *data = pkt + hdr_len;
+	int data_len = total_len - hdr_len;
+	if (data_len < 0)
+		return;
+
+	if (proto == IPv4_PROTO_ICMP)
+		net_on_ipv4_icmp(eth,src_ip,data,data_len);
+
+#if 0
+	vga_write_hex(data_len);
+	vga_writechar('-');
 	vga_write_hex(chksum);
 	vga_writechar('-');
 	vga_write_hex(hdr_chksum);
@@ -629,6 +731,7 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 
 	vga_write_hex(proto);
 	vga_write("\r\n");
+#endif
 }
 
 void net_idle() {
