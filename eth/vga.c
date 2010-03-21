@@ -11,6 +11,7 @@ const char*			hexes = "0123456789ABCDEF";
 vga_char_t*			VGA_alpha=NULL;
 unsigned int			VGA_alpha_rows,VGA_alpha_columns;
 unsigned int			VGA_alpha_x,VGA_alpha_y;
+unsigned char			VGA_color=0x7;
 unsigned int			VGA_iobase;
 
 vga_char_t *vga_alpha_char_ptr(unsigned int x,unsigned int y) {
@@ -62,7 +63,7 @@ void vga_writechar(char c) {
 		vga_cursor_down();
 	}
 	else {
-		*vga_alpha_char_ptr(VGA_alpha_x,VGA_alpha_y) = 0x0700 | ((vga_char_t) ((unsigned char)c));
+		*vga_alpha_char_ptr(VGA_alpha_x,VGA_alpha_y) = (((unsigned short)VGA_color) << 8) | ((vga_char_t) ((unsigned char)c));
 		vga_cursor_right();
 	}
 

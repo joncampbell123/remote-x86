@@ -9,6 +9,7 @@ extern vga_char_t*		VGA_alpha;
 extern unsigned int		VGA_alpha_rows,VGA_alpha_columns;
 extern unsigned int		VGA_alpha_x,VGA_alpha_y;
 extern unsigned int		VGA_iobase;
+extern unsigned char		VGA_color;
 
 vga_char_t *vga_alpha_char_ptr(unsigned int x,unsigned int y);
 void vga_writehex(unsigned int val,unsigned int digits);

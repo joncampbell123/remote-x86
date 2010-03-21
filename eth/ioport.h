@@ -8,6 +8,18 @@ static inline void io_outb(unsigned int port,unsigned char b) {
 		: "d" (port), "a" (b) /* in */ );
 }
 
+static inline void io_outw(unsigned int port,unsigned short b) {
+	__asm__ __volatile__ ("outw	%%ax,%%dx"
+		: /* out */
+		: "d" (port), "a" (b) /* in */ );
+}
+
+static inline void io_outl(unsigned int port,unsigned int b) {
+	__asm__ __volatile__ ("outl	%%eax,%%dx"
+		: /* out */
+		: "d" (port), "a" (b) /* in */ );
+}
+
 static inline void io_outbi(unsigned char port,unsigned char b) {
 	__asm__ __volatile__ ("outb	%%al,%0"
 		: /* out */
@@ -17,6 +29,22 @@ static inline void io_outbi(unsigned char port,unsigned char b) {
 static inline unsigned char io_inb(unsigned int port) {
 	register unsigned char d;
 	__asm__ __volatile__ ("inb	%%dx,%%al"
+		: "=a" (d) /* out */
+		: "d" (port) /* in */ );
+	return d;
+}
+
+static inline unsigned short io_inw(unsigned int port) {
+	register unsigned short d;
+	__asm__ __volatile__ ("inw	%%dx,%%ax"
+		: "=a" (d) /* out */
+		: "d" (port) /* in */ );
+	return d;
+}
+
+static inline unsigned int io_inl(unsigned int port) {
+	register unsigned int d;
+	__asm__ __volatile__ ("inl	%%dx,%%eax"
 		: "=a" (d) /* out */
 		: "d" (port) /* in */ );
 	return d;
