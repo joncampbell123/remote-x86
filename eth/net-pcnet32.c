@@ -79,7 +79,7 @@ static inline void pcnet32_write_bcr(unsigned int x) {
 }
 
 static int pcnet32_init(struct pci_device *pdev) {
-	unsigned int i;
+	unsigned int i,iobar=0;
 
 	if (!pcnet32_known_pci_id(pdev)) return 0;
 
@@ -90,8 +90,10 @@ static int pcnet32_init(struct pci_device *pdev) {
 		if (!b->flags.present) continue;
 
 		if (b->flags.io && b->end >= (b->start+0x1F)) {
-			if (pcnet32_io == NULL)
+			if (pcnet32_io == NULL) {
 				pcnet32_io = b;
+				iobar = i;
+			}
 		}
 	}
 
@@ -99,6 +101,11 @@ static int pcnet32_init(struct pci_device *pdev) {
 		vga_write("Cannot locate I/O resource\r\n");
 		return 0;
 	}
+
+	/* TODO: don't just assume memory and I/O is enabled, turn it on */
+
+	/* enable I/O */
+	pci_config_write_imm(pdev->bus,pdev->device,pdev->function,4,0x29F);
 
 	align_alloc(16);
 	if (pcnet32_rx == NULL) pcnet32_rx = do_alloc(16*16);
@@ -207,7 +214,7 @@ static void pcnet32_send_packet() {
 	tx->status = 0x8000 | (1<<(24-16)) | (1<<(25-16));	/* OWN, STP, ENP one whole packet */
 
 	/* for sync operation wait until it's sent */
-	while (tx->status&0x8000);
+//	while (tx->status&0x8000);
 
 	if (++pcnet32_tx_offset >= pcnet32_ring_size)
 		pcnet32_tx_offset = 0;

@@ -11,8 +11,8 @@
 #include "vga.h"
 #include "pci.h"
 
-extern char			last_byte;
-static unsigned char		*alloc;
+extern char		last_byte;
+unsigned char		*alloc;
 
 void *do_alloc(size_t n) {
 	void *p = (void*)alloc;

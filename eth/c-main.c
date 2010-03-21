@@ -245,6 +245,8 @@ void net_on_arp_IPv4(struct ethernet_frame_header *eth,struct arp_packet *arp,un
 	memcpy(ret_pkt+24,sender_ip,4);
 	/* +28 */
 	chosen_net_drv->send_packet();
+
+	vga_write("Someone is looking for me, replying to ARP request\r\n");
 }
 
 void net_on_arp(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
@@ -258,7 +260,308 @@ void net_on_arp(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 		net_on_arp_IPv4(eth,arp,pkt,sz);
 }
 
+size_t strlen(const char *s) {
+	size_t c = 0;
+	while (*s++ != 0) c++;
+	return c;
+}
+
+char *strcpy(char *dst,const char *src) {
+	char *odst = dst;
+	char c;
+
+	while ((c = *src++) != 0)
+		*dst++ = c;
+
+	*dst = 0;
+	return odst;
+}
+
 #define IPv4_PROTO_ICMP		0x01
+#define IPv4_PROTO_UDP		0x11
+
+static unsigned char *udp_resp_hdr=NULL,*udp_resp_data;
+static unsigned int udp_resp_len=0;
+
+unsigned char *make_udp_response(struct ethernet_frame_header *eth,unsigned char *src_ip,uint16_t src_port,uint16_t dst_port,int len) {
+	unsigned int chksum,i;
+
+	if (len < 0 || len > (1600-20)) return NULL;
+
+	struct ethernet_frame_header ret_eth;
+	ret_eth.type = hton16(ETH_TYPE_IPv4);
+	memcpy(ret_eth.dst_mac,eth->src_mac,6);
+	memcpy(ret_eth.src_mac,my_eth_mac,6);
+
+	unsigned int ipv4_len = 0x14+8+len; /* IPv4 header + UDP header + data */
+	unsigned char *ret_pkt = chosen_net_drv->prepare_send_packet(0x14+8+len,&ret_eth);
+	if (ret_pkt == NULL) {
+		vga_write("ARP: cannot construct packet to answer\r\n");
+		return;
+	}
+
+	memset(ret_pkt,0,0x14+8+len);
+	ret_pkt[0] = 0x45;	/* IPv4 5 words */
+	ret_pkt[2] = ipv4_len >> 8;
+	ret_pkt[3] = ipv4_len;
+	ret_pkt[6] = (2 << 5);	/* DF don't fragment */
+	ret_pkt[8] = 0x40;	/* TTL */
+	ret_pkt[9] = 0x11;	/* UDP */
+	memcpy(ret_pkt+12,my_ipv4_address,4);
+	memcpy(ret_pkt+16,src_ip,4);
+
+	chksum = 0;
+	uint16_t *ret_pkt16 = (uint16_t*)ret_pkt;
+	for (i=0;i < (20>>1);i++) {
+		if (i != 5) {
+			uint16_t wd = ntoh16(ret_pkt16[i]);
+			chksum += wd;
+			chksum += chksum >> 16;
+			chksum &= 0xFFFF;
+		}
+	}
+	uint16_t ret_hdr_chksum = ~chksum;
+	ret_pkt[10] = ret_hdr_chksum >> 8;
+	ret_pkt[11] = ret_hdr_chksum;
+
+	uint16_t udp_len = len + 8;
+	unsigned char *udp_header = ret_pkt + 0x14;
+	*((uint16_t*)(udp_header+0)) = hton16(dst_port);
+	*((uint16_t*)(udp_header+2)) = hton16(src_port);
+	*((uint16_t*)(udp_header+4)) = hton16(udp_len);
+	*((uint16_t*)(udp_header+6)) = 0;	/* fill in checksum later */
+
+	unsigned char *udp_data = udp_header + 8;
+
+	udp_resp_hdr = udp_header;
+	udp_resp_data = udp_data;
+	udp_resp_len = len;
+	return udp_data;
+}
+
+void send_udp_response() {
+	/* TODO: UDP checksum */
+
+	chosen_net_drv->send_packet();
+}
+
+unsigned char *skip_whitespace(unsigned char *p) {
+	while (*p == ' ') p++;
+	return p;
+}
+
+int chartohex(int c) {
+	if (c >= '0' && c <= '9')
+		return (int)(c - '0');
+	else if (c >= 'a' && c <= 'f')
+		return (int)((c - 'a') + 10);
+	else if (c >= 'A' && c <= 'F')
+		return (int)((c - 'A') + 10);
+
+	return -1;
+}
+
+uint32_t s_strtoul_hex(unsigned char *p,unsigned char **rp) {
+	uint32_t val = 0;
+	int digit;
+
+	if (!memcmp(p,"0x",2)) p += 2;
+
+	while ((digit = chartohex(*p)) >= 0) {
+		val <<= 4;
+		val |= (uint32_t)digit;
+		p++;
+	}
+
+	if (rp != NULL) *rp = p;
+	return val;
+}
+
+uint32_t exec_last_seq = -1;
+
+extern const char *hexes;
+
+unsigned char *hex_to_str(unsigned char *p,uint32_t x,unsigned int digits) {
+	unsigned int c;
+	for (c=0;c < digits;c++) {
+		*p++ = hexes[x>>28];
+		x <<= 4;
+	}
+
+	return p;
+}
+
+void net_on_ipv4_udp(struct ethernet_frame_header *eth,unsigned char *src_ip,unsigned char *pkt,int len) {
+	unsigned char pseudo_ipv4[12];
+	unsigned int i;
+	uint32_t chksum = 0;
+	uint16_t *pkt16;
+
+	if (len < 8) return;
+	
+	pkt16 = (uint16_t*)pkt;
+	uint16_t hdr_chksum = ntoh16(pkt16[3]);
+
+	if (hdr_chksum != 0) {
+		memcpy(pseudo_ipv4,src_ip,4);
+		memcpy(pseudo_ipv4+4,my_ipv4_address,4);
+		pseudo_ipv4[8] = 0x00;
+		pseudo_ipv4[9] = IPv4_PROTO_UDP;
+		pseudo_ipv4[10] = len >> 8;
+		pseudo_ipv4[11] = len;
+
+		pkt16 = (uint16_t*)pseudo_ipv4;
+		for (i=0;i < 6;i++) {
+			uint16_t wd = ntoh16(pkt16[i]);
+			chksum += wd;
+			chksum += chksum >> 16;
+			chksum &= 0xFFFF;
+		}
+		pkt16 = (uint16_t*)pkt;
+		for (i=0;i < (len>>1);i++) {
+			if (i != 3) {
+				uint16_t wd = ntoh16(pkt16[i]);
+				chksum += wd;
+				chksum += chksum >> 16;
+				chksum &= 0xFFFF;
+			}
+		}
+		/* hm? so UDP actually cares about checksumming the last byte? */
+		if (len & 1) {
+			chksum += (uint16_t)pkt[len-1] << 8;
+			chksum += chksum >> 16;
+			chksum &= 0xFFFF;
+		}
+		chksum = (~chksum) & 0xFFFF;
+
+		if (chksum != hdr_chksum)
+			return;
+	}
+
+	unsigned char *data = pkt + 8;
+	unsigned int data_length = ntoh16(*((uint16_t*)(pkt+4)));
+	if (data_length > (len-8)) data_length = len-8;
+	uint16_t src_port = ntoh16(*((uint16_t*)(pkt+0)));
+	uint16_t dst_port = ntoh16(*((uint16_t*)(pkt+2)));
+
+	if (dst_port == 777) {
+		if (data_length >= 4 && !memcmp(data,"TEST",4)) {
+			static const char *test_ok = "OK x86-32";
+			unsigned char *data = make_udp_response(eth,src_ip,src_port,dst_port,strlen(test_ok));
+			if (data == NULL) return;
+			memcpy(data,test_ok,strlen(test_ok));
+			send_udp_response();
+		}
+		/* READ <address> <size> */
+		else if (data_length >= 5 && !memcmp(data,"READ ",5)) {
+			unsigned char *p = data+5;
+			p = skip_whitespace(p);
+			uint32_t address = s_strtoul_hex(p,&p);
+			p = skip_whitespace(p);
+			uint32_t size = s_strtoul_hex(p,&p);
+
+			if (size > 1400) size = 1400;
+
+			unsigned char *data = make_udp_response(eth,src_ip,src_port,dst_port,3+8+1+size);	/* OK + hex string + newline + data */
+			if (data == NULL) return;
+			memcpy(data,"OK ",3); data += 3; /* no length field is needed, because the UDP, IPv4, and ethernet frame contain the length anyway */
+			/* for sequencing reasons, we put the address we read from in the response. this way it's possible for the client to blast UDP
+			 * packets at us and quickly read off system memory, yet know which packets got lost. */
+			data = hex_to_str(data,address,8);
+			/* newline */
+			*data++ = '\n';
+			/* data */
+			if (size > 0) memcpy(data,(void*)address,size);
+			send_udp_response();
+		}
+		/* WRITE <address> <seq>
+		 *
+		 * "size" is not needed because the UDP packet already tells us the size of the data */
+		else if (data_length >= 6 && !memcmp(data,"WRITE ",6)) {
+			unsigned char *p = data+5;
+			unsigned char *fence = data+data_length;
+			p = skip_whitespace(p);
+			uint32_t address = s_strtoul_hex(p,&p);
+			p = skip_whitespace(p);
+			uint32_t seq = s_strtoul_hex(p,&p);
+
+			/* the user's data begins after the first newline */
+			while (p < fence && *p != '\n') p++;
+			if (p < fence && *p == '\n') p++;
+			size_t data_len = (size_t)(fence - p);
+
+			if (data_len > 0) memcpy((void*)address,p,data_len);
+
+			unsigned char *data = make_udp_response(eth,src_ip,src_port,dst_port,3+8+1+8);	/* OK + hex string + space + hex string */
+			if (data == NULL) return;
+			memcpy(data,"OK ",3); data += 3; /* no length field is needed, because the UDP, IPv4, and ethernet frame contain the length anyway */
+			/* for sequencing reasons, we put the address we read from in the response. this way it's possible for the client to blast UDP
+			 * packets at us and quickly read off system memory, yet know which packets got lost. */
+			data = hex_to_str(data,address,8); *data++ = ' ';
+			data = hex_to_str(data,seq,8);
+			send_udp_response();
+		}
+		/* LOW */
+		else if (data_length >= 3 && !memcmp(data,"LOW",3)) {
+			unsigned char *data = make_udp_response(eth,src_ip,src_port,dst_port,3+8);	/* OK + hex string + space + hex string */
+			if (data == NULL) return;
+			memcpy(data,"OK ",3); data += 3;
+			data = hex_to_str(data,(uint32_t)alloc,8);
+			send_udp_response();
+		}
+		/* EXEC <address> <seq> */
+		/* address is a 32-bit flat value.
+		 * seq is a sequence value, to avoid executing things twice in case the client times out or fails to get our response.
+		 * if the sequence value is the same as the last one, then we do NOT execute and say "OK" anyway.
+		 * as always, this code trusts that you uploaded the code you want to execute to that address and that your code
+		 * will return properly. Because if it doesn't, you'll never hear from me again... */
+		else if (data_length >= 5 && !memcmp(data,"EXEC ",5)) {
+			unsigned char *p = data + 5;
+			p = skip_whitespace(p);
+			uint32_t address = s_strtoul_hex(p,&p);
+			p = skip_whitespace(p);
+			uint32_t seq = s_strtoul_hex(p,&p);
+
+			if (seq != exec_last_seq) {
+				__asm__ __volatile__	(	"	pusha\n"
+								"	call	*%%eax\n"
+								"	popa\n"
+								: /* out */
+								: "a" (address));
+				exec_last_seq = seq;
+			}
+
+			unsigned char *data = make_udp_response(eth,src_ip,src_port,dst_port,12+8);	/* OK + hex string + space + hex string */
+			if (data == NULL) return;
+			memcpy(data,"OK Complete ",12); data += 12;
+			data = hex_to_str(data,seq,8);
+			send_udp_response();
+		}
+		else {
+			static const char *unk = "ERR Unknown command";
+			unsigned char *data = make_udp_response(eth,src_ip,src_port,dst_port,strlen(unk));
+			if (data == NULL) return;
+			memcpy(data,unk,strlen(unk));
+			send_udp_response();
+		}
+	}
+	else {
+		vga_write("UDP ");
+		vga_write("sport="); vga_write_hex(src_port);
+		vga_write(" dport="); vga_write_hex(dst_port);
+		vga_write(" len="); vga_write_hex(data_length);
+		vga_write("\r\n");
+
+		{
+			unsigned char *p = data;
+			unsigned int c = data_length;
+			while (c-- != 0) {
+				vga_writechar(*p++);
+			}
+		}
+		vga_write("\r\n");
+	}
+}
 
 void net_on_ipv4_icmp(struct ethernet_frame_header *eth,unsigned char *src_ip,unsigned char *pkt,int len) {
 	unsigned int i;
@@ -378,7 +681,6 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 
 	if (memcmp(dst_ip,my_ipv4_address,4))
 		return;
-
 	if (flags & 1)	/* MF = more fragments. we don't do fragmented packets */
 		return;	
 	if (frag_offset != 0)	/* fragment offset implies fragmented packet */
@@ -397,11 +699,13 @@ void net_on_ipv4(struct ethernet_frame_header *eth,unsigned char *pkt,int sz) {
 
 	if (proto == IPv4_PROTO_ICMP)
 		net_on_ipv4_icmp(eth,src_ip,data,data_len);
+	else if (proto == IPv4_PROTO_UDP)
+		net_on_ipv4_udp(eth,src_ip,data,data_len);
 }
 
 void net_idle() {
 	if (!chosen_net_drv_open)
-			return;
+		return;
 
 	int sz = 0;
 	struct ethernet_frame_header eth;
@@ -439,6 +743,26 @@ void net_idle() {
 	}
 }
 
+void vga_write_dec(unsigned int x) {
+	char stk[12];
+	int stki=sizeof(stk)-1;
+
+	stk[stki] = (char)(x%10); x /= 10;
+	while (x != 0 && stki > 0) {
+		stk[--stki] = (char)(x%10); x /= 10;
+	}
+
+	while (stki < sizeof(stk))
+		vga_writechar(stk[stki++]+'0');
+}
+
+void vga_write_ipv4(unsigned char *p) {
+	vga_write_dec(*p++); vga_writechar('.');
+	vga_write_dec(*p++); vga_writechar('.');
+	vga_write_dec(*p++); vga_writechar('.');
+	vga_write_dec(*p++);
+}
+
 void main_menu() {
 	int brk=0,redraw=1;
 
@@ -459,7 +783,9 @@ void main_menu() {
 				vga_write("\r\n");
 			}
 			vga_write("\r\n");
-			vga_write("Main menu:\r\n");
+			vga_write("Main menu: ");
+			vga_write_ipv4(my_ipv4_address);
+			vga_write("\r\n");
 			vga_write(" P. Show PCI devices\r\n");
 			vga_write(" x. Auto-probe network card\r\n");
 			if (chosen_net_drv_open)	vga_write(" c. Close driver\r\n");
@@ -493,11 +819,13 @@ void main_menu() {
 			}
 		}
 		else if (a == 'c') {
+#if 0
 			if (chosen_net_drv_open && chosen_net_drv != NULL && chosen_net_dev != NULL) {
 				chosen_net_drv->uninit(chosen_net_dev);
 				chosen_net_drv_open = 0;
 				redraw = 1;
 			}
+#endif
 		}
 		else if (a == 'x') {
 			autoprobe_network_card();
