@@ -1,4 +1,7 @@
 
+#ifndef VGA_H
+#define VGA_H
+
 #include "stage2eth-base.h"
 #include "datatypes.h"
 #include "ioport.h"
@@ -23,4 +26,6 @@ void vga_write(const char *s);
 void vga_init();
 
 #define vga_write_hex(x)	vga_writehex(x,sizeof(x)*2)
+
+#endif /* VGA_H */
 
