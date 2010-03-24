@@ -45,6 +45,8 @@ static unsigned int		pcnet32_tx_offset;
 #define PCNET32_RESET		0x14
 
 static int pcnet32_known_pci_id(struct pci_device *p) {
+	if (p == NULL) return 0;
+
 	if (p->vendor_id == 0x1022) {
 		if (p->device_id == 0x2000)
 			return 1;

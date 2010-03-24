@@ -377,6 +377,21 @@ uint32_t s_strtoul_hex(unsigned char *p,unsigned char **rp) {
 	return val;
 }
 
+uint32_t s_strtoul_dec(unsigned char *p,unsigned char **rp) {
+	uint32_t val = 0;
+	int digit;
+
+	while ((digit = chartohex(*p)) >= 0) {
+		if (digit >= 10) break;
+		val *= 10;
+		val += (uint32_t)digit;
+		p++;
+	}
+
+	if (rp != NULL) *rp = p;
+	return val;
+}
+
 uint32_t exec_last_seq = -1;
 
 extern const char *hexes;
@@ -763,6 +778,61 @@ void vga_write_ipv4(unsigned char *p) {
 	vga_write_dec(*p++);
 }
 
+void change_ip_addr_ui() {
+	int inputi=0,r,a;
+	char input[64];
+	int ok=0;
+
+	vga_write("\r\n");
+	vga_write("Enter new IP address, or hit ENTER to cancel.\r\n");
+	vga_write("IP address must follow the standard dotted notation 123.123.123.123\r\n");
+
+	while (!ok) {
+		r = keyb8042_read_buffer();
+		a = keyb8042_to_ascii(r);
+
+		if ((a >= '0' && a <= '9') || a == '.') {
+			if (inputi < 63) {
+				VGA_alpha_x = inputi;
+				vga_writechar(a);
+				input[inputi++] = a;
+			}
+		}
+		else if (a == 8) {
+			if (inputi > 0) {
+				VGA_alpha_x--;
+				vga_writechar(' ');
+				VGA_alpha_x--;
+				vga_update_cursor();
+				inputi--;
+			}
+		}
+		else if (a == 13) {
+			ok = 1;
+		}
+	}
+	input[inputi] = 0;
+
+	{
+		unsigned char *p = (unsigned char*)input;
+		uint32_t a=0,b=0,c=0,d=0;
+		a = s_strtoul_dec(p,&p);
+		if (*p++ == '.') {
+			b = s_strtoul_dec(p,&p);
+			if (*p++ == '.') {
+				c = s_strtoul_dec(p,&p);
+				if (*p++ == '.') {
+					d = s_strtoul_dec(p,&p);
+					my_ipv4_address[0] = (unsigned char)a;
+					my_ipv4_address[1] = (unsigned char)b;
+					my_ipv4_address[2] = (unsigned char)c;
+					my_ipv4_address[3] = (unsigned char)d;
+				}
+			}
+		}
+	}
+}
+
 void main_menu() {
 	int brk=0,redraw=1;
 
@@ -786,6 +856,7 @@ void main_menu() {
 			vga_write("Main menu: ");
 			vga_write_ipv4(my_ipv4_address);
 			vga_write("\r\n");
+			vga_write(" I. Change IPv4 address\r\n");
 			vga_write(" P. Show PCI devices\r\n");
 			vga_write(" x. Auto-probe network card\r\n");
 			if (chosen_net_drv_open)	vga_write(" c. Close driver\r\n");
@@ -805,12 +876,15 @@ void main_menu() {
 				redraw=1;
 			}
 		}
+		else if (a == 'i') {
+			change_ip_addr_ui();
+			redraw=1;
+		}
 		else if (a == 'o') {
-			if (!chosen_net_drv_open && chosen_net_drv != NULL && chosen_net_dev != NULL) {
+			if (!chosen_net_drv_open && chosen_net_drv != NULL) {
 				if (chosen_net_drv->init(chosen_net_dev)) {
 					chosen_net_drv_open = 1;
 					redraw = 1;
-//					while (keyb8042_read_buffer() != 0x1C);
 				}
 				else {
 					vga_write("Open failed\r\n");

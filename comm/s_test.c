@@ -128,7 +128,7 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"failed\n");
 		if (!remote_286(stty_fd))
 			fprintf(stderr,"failed\n");
-
+#if 0
 		if (!remote_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 		if (!remote_386_16(stty_fd))
@@ -138,7 +138,7 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"failed\n");
 		if (!remote_386_32(stty_fd))
 			fprintf(stderr,"failed\n");
-
+#endif
 		if (!remote_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 
