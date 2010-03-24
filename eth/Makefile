@@ -1,4 +1,4 @@
-all: ../stage1-floppy.bin ../stage1-cdrom.bin stage2eth.bin floppyeth.bin
+all: ../stage1-floppy.bin ../stage1-cdrom.bin stage2eth.bin floppyeth.bin cdrometh.iso
 
 CFLAGS=-nostdlib -Os -fomit-frame-pointer -march=i386
 
@@ -7,6 +7,10 @@ CFLAGS=-nostdlib -Os -fomit-frame-pointer -march=i386
 
 ../stage1-cdrom.bin:
 	make -C .. stage1-cdrom.bin
+
+cdrometh.iso: ../stage1-cdrom.bin
+	cat ../stage1-cdrom.bin stage2eth.bin >cdrometh.bin
+	mkisofs -o cdrometh.iso -R -J -b cdrometh.bin -no-emul-boot -boot-load-seg 0x780 -exclude-list ../cdrom.exclude .
 
 clean:
 	rm -f *.o *.bin *.iso

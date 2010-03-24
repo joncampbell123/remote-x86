@@ -87,7 +87,7 @@ int main(int argc,char **argv) {
 		return 1;
 	}
 
-	configure_tty(stty_fd);
+	remote_rs232_configure(stty_fd);
 
 	if (dumb_tty) {
 		do_dumb_tty();
@@ -96,9 +96,9 @@ int main(int argc,char **argv) {
 		unsigned char buf[80*25*2];
 		int x,y;
 
-		if (!remote_test(stty_fd))
+		if (!remote_rs232_test(stty_fd))
 			fprintf(stderr,"Remote test failed\n");
-		if (!remote_read(stty_fd,0xB8000,sizeof(buf),buf))
+		if (!remote_rs232_read(stty_fd,0xB8000,sizeof(buf),buf))
 			fprintf(stderr,"Remote read failed\n");
 	
 		printf("+");
@@ -121,25 +121,25 @@ int main(int argc,char **argv) {
 		for (x=0;x < 80;x++) printf("-");
 		printf("+\n");
 
-		if (!remote_8086(stty_fd))
+		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 
-		if (!remote_8086(stty_fd))
+		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
-		if (!remote_286(stty_fd))
+		if (!remote_rs232_286(stty_fd))
 			fprintf(stderr,"failed\n");
 #if 0
-		if (!remote_8086(stty_fd))
+		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
-		if (!remote_386_16(stty_fd))
+		if (!remote_rs232_386_16(stty_fd))
 			fprintf(stderr,"failed\n");
 
-		if (!remote_8086(stty_fd))
+		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
-		if (!remote_386_32(stty_fd))
+		if (!remote_rs232_386_32(stty_fd))
 			fprintf(stderr,"failed\n");
 #endif
-		if (!remote_8086(stty_fd))
+		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 
 		const char *str1 = "LOL I PWN3D j00 HAX HAX";
@@ -148,7 +148,7 @@ int main(int argc,char **argv) {
 			buf[(x*2)+1] = 0x0E;
 		}
 
-		if (!remote_write(stty_fd,0xB8000,strlen(str1)*2,buf))
+		if (!remote_rs232_write(stty_fd,0xB8000,strlen(str1)*2,buf))
 			fprintf(stderr,"Remote write failed\n");
 
 		sleep(2);
@@ -161,9 +161,9 @@ int main(int argc,char **argv) {
 			close(fd);
 			assert(sz > 0);
 
-			if (!remote_write(stty_fd,0x20000,sz,buf))
+			if (!remote_rs232_write(stty_fd,0x20000,sz,buf))
 				fprintf(stderr,"Remote write fail\n");
-			if (!remote_exec_seg_off(stty_fd,0x2000,0x0000,600))
+			if (!remote_rs232_exec_seg_off(stty_fd,0x2000,0x0000,600))
 				fprintf(stderr,"Exec fail\n");
 		}
 	}

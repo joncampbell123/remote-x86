@@ -1,5 +1,6 @@
 
 	org		0
+	use16
 
 _start:	mov		ax,0xB800
 	mov		es,ax
@@ -7,6 +8,7 @@ _start:	mov		ax,0xB800
 
 l1:	mov		cx,80*25
 	mov		ax,dx
+	xor		di,di
 
 l2:	stosw
 	inc		ax

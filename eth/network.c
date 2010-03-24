@@ -15,7 +15,7 @@
 #include "net-ne2000.h"
 #include "net-pcnet32.h"
 
-unsigned char			my_ipv4_address[4] = {192,168,250,254};
+unsigned char			my_ipv4_address[4] = {192,168,1,254};
 unsigned char			my_eth_mac[6];
 
 struct pci_device		*chosen_net_dev = NULL;
