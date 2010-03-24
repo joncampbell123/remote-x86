@@ -19,7 +19,7 @@ s_test: s_test.c
 	gcc -o $@ $< s_lib.a
 
 clean:
-	rm -f s_test *.o *.bin *.a
+	rm -f e_test s_test *.o *.bin *.a
 
 vga_puke.bin: vga_puke.asm
 	nasm -f bin -o $@ $<
