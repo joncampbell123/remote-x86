@@ -15,6 +15,7 @@
 #include "net-ne2000.h"
 #include "net-pcnet32.h"
 #include "net-rtl8139.h"
+#include "net-rtl8101.h"
 
 unsigned char			my_ipv4_address[4] = {192,168,250,254};
 unsigned char			my_eth_mac[6];
@@ -25,7 +26,7 @@ unsigned char			chosen_net_drv_open = 0;
 
 struct network_driver *net_drivers[] = {
 	&pcnet32,				/* AMD PCnet Fast III network card */
-	&rtl8139,				/* RealTek 8139/8101E */
+	&rtl8101,				/* RealTek 8101E */
 	&ne2000,				/* your typical mid-to-late 1990's NE-2000 compatible */
 	NULL
 };
