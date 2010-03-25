@@ -14,7 +14,7 @@
 
 int main(int argc,char **argv) {
 	char buffer[4096];
-	char *ip_addr = "192.168.1.254";
+	char *ip_addr = "192.168.250.254";
 	struct remote_eth_connection *reth;
 	int rd,i,x,y;
 

@@ -75,7 +75,7 @@ void keyb8042_init() {
 		return;
 	}
 
-	keyb8042_write_command_byte(0x34|1);	/* disable PS/2 mouse, disable translate scan codes, PC mode, enable keyboard, warm boot, no keyboard interrupt */
+	keyb8042_write_command_byte(0x33|0x40);	/* XT translation */
 	keyb8042_write_command(0xAB);		/* keyboard interface test */
 	int keyb8042_test = keyb8042_read_buffer();
 	if (keyb8042_test >= 1 && keyb8042_test <= 3)
@@ -109,6 +109,8 @@ void keyb8042_init() {
 	if (keyb8042_read_buffer() != 0xFA) vga_write("PS/2 keyboard set scan code #1 (first): no ack\r\n");
 	keyb8042_write_buffer(1);
 	if (keyb8042_read_buffer() != 0xFA) vga_write("PS/2 keyboard set scan code #1: no ack\r\n");
+
+	keyb8042_write_command(0xAE);		/* enable keyboard */
 
 	keyb8042_write_buffer(0xF4);		/* enable keyboard */
 	if (keyb8042_read_buffer() != 0xFA) vga_write("PS/2 keyboard enable: no ack\r\n");

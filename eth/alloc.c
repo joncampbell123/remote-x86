@@ -21,7 +21,7 @@ void *do_alloc(size_t n) {
 }
 
 void init_alloc() {
-	alloc = (unsigned char*)((&last_byte) + 0x10000); /* <- FIXME why is this bias needed? */
+	alloc = (unsigned char*)((&last_byte) + 0x20000); /* <- FIXME why is this bias needed? */
 }
 
 void align_alloc(unsigned int sz) {

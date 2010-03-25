@@ -19,8 +19,8 @@ static unsigned char		ne2000_mac_address[6];
 
 static unsigned int		ne2000_probe_base=0;
 
-static unsigned char		ne2000_last_packet[2048];
-static unsigned char		ne2000_xmit_packet[2049];
+static unsigned char*		ne2000_last_packet;
+static unsigned char*		ne2000_xmit_packet;
 static unsigned int		ne2000_last_packet_size;
 static unsigned int		ne2000_xmit_packet_size;
 
@@ -94,6 +94,9 @@ static int ne2000_init(struct pci_device *pdev) {
 
 	if (ne2000_probe_base == 0 || pdev != NULL)
 		return 0;
+
+	ne2000_last_packet = do_alloc(2048);
+	ne2000_xmit_packet = do_alloc(2049);
 
 	io_outb(ne2000_probe_base+0x0,0x21);		/* abort transmit, STOP, page zero */
 	io_outb(ne2000_probe_base+0xE,0xC5);		/* little endian, word-size, dual 16-bit mode for long words, FIFO triggers at 6 words */

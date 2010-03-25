@@ -736,6 +736,10 @@ void net_idle() {
 			else if (ntoh16(eth.type) == ETH_TYPE_IPv4) {
 				net_on_ipv4(&eth,p,sz);
 			}
+			/* what the hell are these 0xFFFFFFFFFFFFFFFFFFFFFFF packets? */
+			else if (!memcmp(p,"\xFF\xFF\xFF\xFF\xFF\xFF",6)) {
+			}
+			/* else... */
 			else {
 				vga_writechar('>');
 				vga_write_hex(eth.dst_mac[0]);
@@ -855,10 +859,17 @@ void main_menu() {
 			vga_write("\r\n");
 			vga_write("Main menu: ");
 			vga_write_ipv4(my_ipv4_address);
+			vga_writechar(' ');
+			{
+				unsigned int i;
+				for (i=0;i < 6;i++)
+					vga_write_hex(my_eth_mac[i]);
+			}
 			vga_write("\r\n");
 			vga_write(" I. Change IPv4 address\r\n");
 			vga_write(" P. Show PCI devices\r\n");
 			vga_write(" x. Auto-probe network card\r\n");
+			vga_write(" r. Reset computer\r\n");
 			if (chosen_net_drv_open)	vga_write(" c. Close driver\r\n");
 			else				vga_write(" o. Open driver\r\n");
 			redraw=0;
@@ -867,7 +878,9 @@ void main_menu() {
 		int r = keyb8042_read_buffer_imm();
 		int a = keyb8042_to_ascii(r);
 
-		if (a == 'p') {
+		if (a == 'r') {
+		}
+		else if (a == 'p') {
 			if (!pci_bus_present) {
 				vga_write(" ! PCI bus not present\r\n");
 			}
@@ -905,6 +918,10 @@ void main_menu() {
 			autoprobe_network_card();
 			redraw = 1;
 		}
+		else if (a != -1) {
+			vga_write_hex(r);
+			vga_writechar(' ');
+		}
 
 		net_idle();
 	}
@@ -923,6 +940,13 @@ void c_start() {
 	vga_write("THIS VERSION IS FOR DEBUGGING OVER ETHERNET. It is intended for use on machines\r\n");
 	vga_write("where there is ethernet but no working RS-232 serial port (like most laptops).\r\n");
 	vga_write("\r\n");
+
+	autoprobe_network_card();
+	if (!chosen_net_drv_open && chosen_net_drv != NULL) {
+		if (chosen_net_drv->init(chosen_net_dev)) {
+			chosen_net_drv_open = 1;
+		}
+	}
 
 	main_menu();
 

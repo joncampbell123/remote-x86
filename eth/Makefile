@@ -15,7 +15,7 @@ cdrometh.iso: ../stage1-cdrom.bin
 clean:
 	rm -f *.o *.bin *.iso
 
-stage2eth.bin: stage2eth-base.o c-main.o vga.o keyb8042.o pit-8253.o interrupt.o pic-8259.o pci.o alloc.o net-ne2000.o net-pcnet32.o network.o end.o
+stage2eth.bin: stage2eth-base.o c-main.o vga.o keyb8042.o pit-8253.o interrupt.o pic-8259.o pci.o alloc.o network.o net-ne2000.o net-pcnet32.o net-rtl8139.o end.o
 	./assemble-stage2eth.sh $^
 
 stage2eth-base.o: stage2eth-base.asm
