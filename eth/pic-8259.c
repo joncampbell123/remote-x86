@@ -75,6 +75,13 @@ void pic_8259_init() {
 	set_idt(0x2F,INTERRUPT_FUNCTION(default_irq_pic2_15));
 }
 
+void pic_8259_seoi(unsigned int i) {
+	if (i >= 0 && i <= 7)
+		io_outbi_d(PIC_8259_PIC1,0x60+i);
+	else if (i >= 8 && i <= 15)
+		io_outbi_d(PIC_8259_PIC2,0x60+i-8);
+}
+
 unsigned int pending_interrupts() {
 	unsigned char irr1,irr2;
 
