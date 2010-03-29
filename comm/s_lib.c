@@ -242,5 +242,14 @@ void remote_rs232_configure(int fd) {
 		fprintf(stderr,"Cannot set termios attributes\n");
 		return;
 	}
+
+	/* remove any data pending */
+	fcntl(fd,F_SETFL,fcntl(fd,F_GETFL) | O_NONBLOCK);
+	{
+		unsigned char buf[16];
+		int rd;
+		while ((rd=read(fd,buf,sizeof(buf))) > 0);
+	}
+	fcntl(fd,F_SETFL,fcntl(fd,F_GETFL) & (~O_NONBLOCK));
 }
 

@@ -134,6 +134,7 @@ int announce86_imm(int sfd,const char *str) {
 		fprintf(stderr,"BUG: announcement is too long\n");
 	}
 
+	fprintf(stderr,"ANNOUNCING: %s\n",str);
 	if (!remote_rs232_write(sfd,seg_announce86_buffer,str_len,str))
 		return 0;
 
@@ -182,6 +183,33 @@ int main(int argc,char **argv) {
 
 		/* upload a program and run it */
 		if (!announce86_imm(stty_fd,"CPU tests commencing now. Be prepared\r\n")) return 1;
+
+		{
+			unsigned char result[4];
+
+			/* INT 6 undefined opcode test */
+			if (!(sz=upload_code(stty_fd,"cpu/ud_exception_86.bin",seg_alloc)))
+				return 1;
+			if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
+				return 1;
+			fprintf(stderr,"UD exception = %u\n",result[0]);
+			fprintf(stderr,"8086 POP CS = %u\n",result[1]);
+		}
+
+		{
+			unsigned char result[4];
+
+			/* INT 6 undefined opcode test */
+			if (!(sz=upload_code(stty_fd,"cpu/legacy_cpu_detect.bin",seg_alloc)))
+				return 1;
+			if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
+				return 1;
+			fprintf(stderr,"Rev = %u, CPUID = %u\n",result[0],result[1]);
+		}
 	}
 
 	close(stty_fd);
