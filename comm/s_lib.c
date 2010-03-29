@@ -9,16 +9,46 @@
 
 #include <termios.h>
 
+int read_forced(int fd,void *ptr,int sz) {
+	int r=0;
+
+	while (sz > 0) {
+		int rd = read(fd,ptr,sz);
+		if (rd == 0) {
+			fprintf(stderr,"read_forced() got zero bytes\n");
+			return r == 0 ? -1 : r;
+		}
+		else if (rd < 0) continue;
+		ptr = (void*)(((char*)ptr) + rd);
+		sz -= rd;
+		r += rd;
+	}
+
+	return r;
+}
+
 int remote_rs232_send_command(int fd,const char *cmd) {
 	fprintf(stderr,">> '%s'\n",cmd);
-	if (write(fd,cmd,strlen(cmd)) != strlen(cmd)) return 0;
-	if (write(fd,"\n",1) != 1) return 0;
+	size_t cmd_len = strlen(cmd);
+	while (cmd_len > 0) {
+		int wd = write(fd,cmd,cmd_len);
+		if (wd > 0) {
+			cmd_len -= wd;
+			cmd += wd;
+		}
+		else if (wd == 0) {
+			break;
+		}
+	}
+	int wd;
+	while ((wd=write(fd,"\n",1)) == -1);
+	if (wd == 0) return 0;
 	return 1;
 }
 
 int remote_rs232_get_response(int fd,char *buf,size_t len,unsigned long timeout) {
 	char *wp = buf,*fence = buf + len - 1;
-	time_t et = time(NULL) + ((timeout+999999)/1000000) + 1;
+	time_t et = time(NULL) + ((timeout+999999)/1000000) + 1 + 1;
 	int ret = 0;
 	char c;
 
@@ -30,21 +60,14 @@ int remote_rs232_get_response(int fd,char *buf,size_t len,unsigned long timeout)
 			break;
 		}
 
-		struct timeval tv;
-		fd_set f;
-
-		tv.tv_sec = 1;
-		tv.tv_usec = 0;
-
-		FD_ZERO(&f);
-		FD_SET(fd,&f);
-		if (select(fd+1,&f,NULL,NULL,&tv) == 1) {
-			int r = read(fd,&c,1);
-			if (r == 0) {
-				ret = -1;
-				break;
-			}
+		c = 0;
+		int r = read(fd,&c,1);
+		if (r == 0) {
+			ret = -1;
+			break;
 		}
+		else if (r < 0)
+			continue;
 
 		if (c >= 32 || c < 0) {
 			if (wp < fence) {
@@ -118,10 +141,14 @@ int remote_rs232_read(int fd,unsigned long long addr,unsigned int count,unsigned
 	FD_SET(fd,&f);
 	tv.tv_sec = 3;
 	tv.tv_usec = 0;
-	if (select(fd+1,&f,NULL,NULL,&tv) != 1)
+	if (select(fd+1,&f,NULL,NULL,&tv) != 1) {
+		fprintf(stderr,"rs232_read(): select timed out\n");
 		return -1;
-	if (read(fd,line,3) != 3)
+	}
+	if ((rd=read_forced(fd,line,3)) != 3) {
+		fprintf(stderr,"rs232_read(): cannot read 3 bytes (got %d)\n",rd);
 		return -1;
+	}
 	if (memcmp(line,"OK ",3) != 0)
 		return remote_rs232_get_response(fd,line,sizeof(line),1000000);
 
@@ -130,7 +157,12 @@ int remote_rs232_read(int fd,unsigned long long addr,unsigned int count,unsigned
 		unsigned int r = count;
 		while (r > 0) {
 			rd = read(fd,ptr,r);
-			if (rd == 0) return -1;
+			if (rd == 0) {
+				fprintf(stderr,"rs232_read(): got zero bytes\n");
+				return -1;
+			}
+			else if (rd < 0) continue;
+//			if (rd > 0) write(2,ptr,rd);
 			assert(rd <= r);
 			ptr += rd;
 			r -= rd;
@@ -139,10 +171,15 @@ int remote_rs232_read(int fd,unsigned long long addr,unsigned int count,unsigned
 	else
 		rd = 0;
 
-	if (read(fd,line,2) != 2)
+	if ((rd=read_forced(fd,line,2)) != 2) {
+		fprintf(stderr,"rs232_read(): cannot read 2 bytes (got %d)\n",rd);
 		return -1;
-	if (memcmp(line,"\r\n",2))
+	}
+	if (memcmp(line,"\r\n",2)) {
+		line[2] = 0;
+		fprintf(stderr,"rs232_read(): line did not end in \\r\\n, '%s'\n",line);
 		return -1;
+	}
 
 	return 1;
 }

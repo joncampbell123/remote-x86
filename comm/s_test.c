@@ -96,8 +96,12 @@ int main(int argc,char **argv) {
 		unsigned char buf[80*25*2];
 		int x,y;
 
+		remote_rs232_test(stty_fd);
+		remote_rs232_test(stty_fd);
 		if (!remote_rs232_test(stty_fd))
 			fprintf(stderr,"Remote test failed\n");
+
+		memset(buf,'x',sizeof(buf));
 		if (!remote_rs232_read(stty_fd,0xB8000,sizeof(buf),buf))
 			fprintf(stderr,"Remote read failed\n");
 	
@@ -128,7 +132,6 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"failed\n");
 		if (!remote_rs232_286(stty_fd))
 			fprintf(stderr,"failed\n");
-#if 0
 		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 		if (!remote_rs232_386_16(stty_fd))
@@ -138,7 +141,6 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"failed\n");
 		if (!remote_rs232_386_32(stty_fd))
 			fprintf(stderr,"failed\n");
-#endif
 		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 
