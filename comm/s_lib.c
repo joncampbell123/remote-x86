@@ -191,8 +191,8 @@ void remote_rs232_configure(int fd) {
 	}
 
 	cfmakeraw(&t);
-	cfsetospeed(&t,B19200);
-	cfsetispeed(&t,B19200);
+	cfsetospeed(&t,B9600);
+	cfsetispeed(&t,B9600);
 	t.c_cflag = (t.c_cflag & ~CSIZE) | CS8;
 	t.c_cflag &= ~(CSTOPB);
 	t.c_cflag |= CREAD;
