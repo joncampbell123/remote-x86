@@ -12,4 +12,5 @@ cpu_tests: cpu_tests.c ../s_lib.a
 
 clean:
 	make -C cpu clean
+	rm -f cpu_tests
 
