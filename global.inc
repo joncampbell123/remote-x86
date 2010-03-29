@@ -1,7 +1,7 @@
 
 GDT_ENTRIES		equ		32
 IN_BUF_SIZE		equ		256
-BAUD_DIVISOR		equ		(115200/38400)	; 38400 (div 3)
+BAUD_DIVISOR		equ		(115200/19200)	; 19200 (div 6)
 
 USER_CODE_SELECTOR	equ		0x20			; used by EXEC to run user code in it's own segment
 ACCESS_SELECTOR		equ		0x18			; used by READ/WRITE commands because 286 segments are limited to 64KB
