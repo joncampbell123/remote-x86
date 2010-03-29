@@ -1,8 +1,8 @@
 all: s_lib.a e_lib.a s_test vga_puke.bin vga_puke_32.bin e_test
 	make -C tests
 
-e_test: e_test.c
-	gcc -o $@ $< e_lib.a
+e_test: e_test.c e_lib.a
+	gcc -o $@ $^
 
 s_lib.a: s_lib.o
 	ar r $@ $<
@@ -16,8 +16,8 @@ e_lib.a: e_lib.o
 e_lib.o: e_lib.c
 	gcc -c -o $@ $<
 
-s_test: s_test.c
-	gcc -o $@ $< s_lib.a
+s_test: s_test.c s_lib.a
+	gcc -o $@ $^
 
 clean:
 	make -C tests clean
