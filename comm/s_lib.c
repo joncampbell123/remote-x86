@@ -90,6 +90,10 @@ int remote_rs232_test(int fd) {
 	char line[128];
 	if (!remote_rs232_send_command(fd,"TEST")) return 0;
 	if (remote_rs232_get_response(fd,line,sizeof(line),1000000) != 1) return 0;
+	if (!strncasecmp(line,"OK Function",11)) {
+		fprintf(stderr,"Whoops! Did EXEC complete just after you opened this lib?\n");
+		if (remote_rs232_get_response(fd,line,sizeof(line),1000000) != 1) return 0;
+	}
 	return 1;
 }
 
