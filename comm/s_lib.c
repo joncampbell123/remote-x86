@@ -197,7 +197,7 @@ void remote_rs232_configure(int fd) {
 	t.c_cflag &= ~(CSTOPB);
 	t.c_cflag |= CREAD;
 
-	if (tcsetattr(fd,TCSANOW,&t) != 0) {
+	if (tcsetattr(fd,TCSAFLUSH,&t) != 0) {
 		fprintf(stderr,"Cannot set termios attributes\n");
 		return;
 	}
