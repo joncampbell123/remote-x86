@@ -1,0 +1,124 @@
+
+Rules when writing tests:
+  * The serial port control program targets an 8086/8088 by default and is 16-bit real mode code,
+    though it can be switched into 32-bit and 64-bit mode as well.
+
+  * The ethernet version is 32-bit code and uploaded code is 32-bit protected mode code (flat).
+    64-bit mode is only obtainable if your code can switch the processor in and out of that mode.
+
+  * Anything targeting a Pentium II or older machine should use the s_lib (serial port library).
+    Such machines, even laptops, always have serial ports.
+
+  * Any tests targeting a 386 or later that may be used on recent machines should be written as
+    32-bit code. If using s_lib, remember to switch the control program into 32-bit 386 mode.
+    If using e_lib, remember that the remote control program is 32-bit at all times.
+
+  * The serial port control program makes no attempt to handle interrupts. Your code will need to
+    patch the interrupt table correspondingly. For CPU tests, make sure you patch the UD# vector
+    at least. In protected modes, the IDTR is not loaded at all. Your code will need to provide
+    one.
+
+  * The ethernet remote control program DOES handle interrupts, though in a minimalistic fashion.
+    Your code will still need to patch the UD# vector however.
+
+  * Always try to code a way to regain control, so that if the test fails the remote control program
+    can still come back to return success.
+
+  * Never assume the CPU supports a certain feature. For example, protected mode. The remote control
+    program makes no attempt to stop you if you ask for 16-bit protected mode on a CPU that doesn't
+    support it. Always upload tests first to check the CPU, THEN make the decision.
+
+  * Never assume the A20 line is on (serial port control only). No attempt is made to switch on
+    the A20 line. You are expected to upload and execute code that switches on (or off) the A20
+    gate, and verify it yourself. READB commands are affected by the A20 gate as well, if you
+    want a reliable read above 1MB you must switch it on.
+
+  * Other CPU features not enabled by default are not switched on by the ethernet and serial port
+    programs. SSE registers for example must be switched on by uploaded code if you wish to test
+    the SSE registers, else, they are disabled on the CPU by default and will cause an error.
+
+  * Paging and page tables are not enabled by the remote debugger (EXCEPT in 64-bit long mode as
+    required by the CPU). If your code requires paging, you must switch it on yourself, and
+    switch it off by the time you return to the remote control program. If you do not switch off
+    paging, then you must leave paging setup to map the lower 1MB region 1:1 so that the program
+    can continue to function normally. Except for 64-bit mode, the remote control program makes
+    no attempt to control paging at all, so you are free to use whatever variant of page table
+    you want, as long as it's supported by the processor.
+
+  * Try not to mess with the serial port when debugging over serial. If your code is testing the
+    serial port, make sure to put it back into the state it was before, before returning to the
+    remote control program. You may, if you want, upload code to change the baud rate. The
+    serial control program makes no attempt to control the serial port beyond simple polling and
+    reading/writing.
+
+  * Always remember: the remote control program gives your code FULL CONTROL of the computer.
+    If your code hard-crashes the computer, it's your fault. Catching faults is YOUR responsibility.
+    The OK code is not returned until your code returns to the remote control program, so if your
+    code never returns, then the serial communication is as good as dead. Never run these tests
+    unattended, always assume that unless the code is fully capable of recovering from errors,
+    that you must be present to hit the RESET button on your PC if anything goes wrong.
+
+  * Try not to mess with the ethernet port (ethernet remote control program only). Remember that
+    the remote control program is using the ethernet card to communicate the OK when your code
+    returns. If you must test the ethernet interface, make sure to reset and reinitialize the
+    device back into the state it was before, before you return to the remote control program.
+
+  * The READ/WRITE commands offered by the remote control work with physical memory addresses,
+    regardless of the CPU mode. In 8086 real mode it is translated internally into segment:offset,
+    in 286 protected mode an "extra" data segment is relocated to that address and used,
+    in 386 and 64-bit mode the address is used directly in flat protected mode.
+
+  * The EXEC command however, works differently depending on the CPU mode:
+       - 8086 real mode, 286 & 386 16-bit protected mode:  EXEC takes a segment and offset
+       - 386 32-bit protected mode, 64-bit long mode: EXEC takes one memory address
+
+  * In 286 & 386 16-bit protected modes, you will need to modify the GDT yourself if you need
+    to access memory outside of the 64K segment given to you while executing your subroutine.
+    Do not modify the first 5 descriptors, those are used by the debugger for it's use. In
+    fact it is recommended that you instead create your own GDT and use that during execution.
+    As long as you restore the debugger's GDT before returning system stability will be OK.
+
+  * Always try to make your code flexible in terms of memory addresses. Try to make your code
+    somewhat relocateable. If you can't then make sure the fixed memory address is unlikely
+    to conflict with the debugger or non-memory regions of the PC. Currently a safe default
+    for a base address is 0x60000 (384KB from base RAM). In normal situations the serial control
+    program only occupies about 8-16KB starting from 0x7C00 anyway, but it will occupy up
+    to an additional 16KB in 64-bit long mode (page tables needed to cover the first 64GB of
+    addressable memory). You can use the "LOW" command to ask the lowest safe memory address.
+    Note that the lowest safe memory address can change depending on CPU mode.
+
+    If your code is running tests in 32-bit or 64-bit protected mode, and the amount of code
+    to execute is large, consider using a base fixed address somewhere in extended memory,
+    above the 1MB mark. Use an address aligned to a 2MB memory boundary if your code will
+    be turning on/off the A20 gate (so that your executable code doesn't "disappear" out
+    from under the CPU and cause a crash). If this code relies on thunking down to 16-bit
+    real mode additional work must be done to ensure your calls to 16-bit real mode lie
+    below the 1MB boundary.
+
+  * If the test will affect system memory and it's ability to retain data, copy the
+    related subroutine to another location, such as unused video RAM. Then execute from
+    video RAM during the test. Have the subroutine copy the remote control program up
+    there as well (from 0x8000-0x9FFF), if there is room, so that the remote control program
+    is not corrupted. Make sure that your code is able to fully restore system memory
+    after the test, and copy the debugger program back into place before returning.
+    * THE DEBUGGER PROGRAM IS NOT RELOCATEABLE IN MEMORY, AND MUST EXECUTE FROM 0x8000 *
+
+  * If your code will be doing anything to hard-reset the CPU, make sure your code
+    knows how to use the "286 reset trick" to immediately regain control after the
+    CPU has reset. This trick should work with all 286, 386, 486, and most early
+    Pentium-class CPUs (most BIOSes apparently in the 1992-1995 timeframe are
+    written to support all CPUs mentioned in one unified blob and, as a side
+    effect, support the reset trick). Anything with a BIOS made 1996 or later,
+    however, is not guaranteed to support the reset vector. If you are not sure,
+    try it and ask that the user standby in case the BIOS decides to ignore the
+    boot vector and fully reboot the machine. If that happens, the serial line
+    will show no response after issuing the command to reset.
+
+  * It is recommended that your code hook the NMI interrupt as well, in case something
+    seriously goes wrong and the hardware attempts to notify you via NMI.
+
+  * When testing certain instructions that work from fixed memory locations (like LOADALL)
+    make sure that what was there before is restored properly. If the debugger program
+    is in the way, copy it aside and then overwrite the area. When you are done you
+    must copy the debugger program back.
+
