@@ -1,6 +1,14 @@
-all: floppy.bin floppy-x64.bin cdrom.iso cdrom-x64.iso
+all: Makefile.inc Makefile.inc.sh floppy.bin floppy-x64.bin cdrom.iso cdrom-x64.iso
 	make -C eth
 	make -C comm
+
+Makefile.inc:
+	./autodetect-tools make >Makefile.inc
+
+Makefile.inc.sh:
+	./autodetect-tools sh >Makefile.inc.sh
+
+include Makefile.inc.sh
 
 stage1-floppy.bin: stage1-floppy.asm
 	nasm -o $@ -f bin $<
@@ -85,4 +93,5 @@ clean:
 	find -name \*~ -delete
 	make -C comm clean
 	make -C eth clean
+	rm -f Makefile.inc Makefile.inc.sh
 

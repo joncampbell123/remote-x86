@@ -1,5 +1,7 @@
 all: ../stage1-floppy.bin ../stage1-cdrom.bin stage2eth.bin floppyeth.bin cdrometh.iso
 
+include ../Makefile.inc
+
 CFLAGS=-nostdlib -Os -fomit-frame-pointer -march=i386
 
 ../stage1-floppy.bin:
@@ -25,7 +27,7 @@ end.o: end.asm
 	nasm -o $@ -f elf32 $<
 
 .c.o:
-	i686-pc-linux-gnu-gcc $(CFLAGS) -c -o $@ $<
+	$(CC_32) $(CFLAGS) -c -o $@ $<
 
 floppyeth-raw.bin: ../stage1-floppy.bin stage2eth.bin
 	../stage1-floppy-patch-sectorcount ../stage1-floppy.bin stage2eth.bin
