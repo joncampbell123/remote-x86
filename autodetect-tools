@@ -1,0 +1,53 @@
+#!/bin/bash
+
+HOST=`uname -m`
+WHAT=$1
+
+if [ "$HOST" == "x86_64" ]; then
+	CC_32="gcc -m32"
+	LD_32=ld
+	AS_32=as
+	OC_32=objcopy
+	CC_64="gcc -m64"
+	LD_64=ld
+	AS_64=as
+	OC_64=objcopy
+else
+	CC_32=gcc
+	LD_32=ld
+	AS_32=as
+	OC_32=objcopy
+	CC_64=x86_64-pc-linux-gnu-gcc
+	LD_64=x86_64-pc-linux-gnu-ld
+	AS_64=x86_64-pc-linux-gnu-as
+	OC_64=x86_64-pc-linux-gnu-objcopy
+fi
+
+if [ "$WHAT" == "sh" ]; then
+cat <<_EOF
+CC_32="$CC_32"
+LD_32="$LD_32"
+AS_32="$AS_32"
+OC_32="$OC_32"
+
+CC_64="$CC_64"
+LD_64="$LD_64"
+AS_64="$AS_64"
+OC_64="$OC_64"
+_EOF
+fi
+
+if [ "$WHAT" == "make" ]; then
+cat <<_EOF
+CC_32=$CC_32
+LD_32=$LD_32
+AS_32=$AS_32
+OC_32=$OC_32
+
+CC_64=$CC_64
+LD_64=$LD_64
+AS_64=$AS_64
+OC_64=$OC_64
+_EOF
+fi
+
