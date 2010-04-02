@@ -164,88 +164,71 @@ void init_x86_test_results(struct x86_test_results *r) {
 	memset(r,0,sizeof(*r));
 }
 
-int main(int argc,char **argv) {
-	struct x86_test_results cpu;
+int run_tests(struct x86_test_results *cpu,int stty_fd) {
+	unsigned char buf[80*25*2];
+	int x,y,sz;
 
-	init_x86_test_results(&cpu);
-
-	if (parse_argv(argc,argv))
-		return 1;
-
-	if ((stty_fd = open(stty_dev,O_RDWR)) < 0) {
-		fprintf(stderr,"Cannot open %s\n",stty_dev);
+	remote_rs232_test(stty_fd);
+	remote_rs232_test(stty_fd);
+	if (!remote_rs232_test(stty_fd)) {
+		fprintf(stderr,"Remote test failed\n");
 		return 1;
 	}
 
-	remote_rs232_configure(stty_fd);
+	/* switch into 8086 mode */
+	if (!remote_rs232_8086(stty_fd))
+		return 1;
 
-	if (dumb_tty) {
-		do_dumb_tty();
+	/* decide where sub-programs go */
+	if (!(sz=upload_code(stty_fd,"cpu/announce86.bin",seg_alloc))) return 1;
+	seg_announce86 = seg_alloc;
+	seg_alloc = (seg_alloc + sz + 0xF) & (~0xF);
+	seg_announce86_buffer = seg_alloc;
+	seg_alloc += 256;
+
+	/* upload a program and run it */
+	if (!announce86_imm(stty_fd,"CPU tests commencing now. Be prepared\r\n")) return 1;
+
+	{
+		unsigned char result[4];
+
+		/* INT 6 undefined opcode test */
+		if (!(sz=upload_code(stty_fd,"cpu/ud_exception_86.bin",seg_alloc)))
+			return 1;
+		if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
+			return 1;
+		if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
+			return 1;
+
+		cpu->has_ud_exception =
+			(result[0] == 1);
+		cpu->has_pop_cs =
+			(result[1] == 1);
+
+		fprintf(stderr,"UD exception=%u, 8086 POP CS=%u\n",
+				cpu->has_ud_exception,
+				cpu->has_pop_cs);
 	}
-	else {
-		unsigned char buf[80*25*2];
-		int x,y,sz;
 
-		remote_rs232_test(stty_fd);
-		remote_rs232_test(stty_fd);
-		if (!remote_rs232_test(stty_fd)) {
-			fprintf(stderr,"Remote test failed\n");
+	{
+		unsigned char result[4];
+
+		/* standard 8086-486 EFLAGS test */
+		if (!(sz=upload_code(stty_fd,"cpu/legacy_cpu_detect.bin",seg_alloc)))
 			return 1;
-		}
-
-		/* switch into 8086 mode */
-		if (!remote_rs232_8086(stty_fd))
+		if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
+			return 1;
+		if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
 			return 1;
 
-		/* decide where sub-programs go */
-		if (!(sz=upload_code(stty_fd,"cpu/announce86.bin",seg_alloc))) return 1;
-		seg_announce86 = seg_alloc;
-		seg_alloc = (seg_alloc + sz + 0xF) & (~0xF);
-		seg_announce86_buffer = seg_alloc;
-		seg_alloc += 256;
+		cpu->has_cpuid = (result[1] == 1);
+		cpu->std0to4_eflags_revision = result[0];
+		fprintf(stderr,"EFLAGS rev=%u, CPUID=%u\n",
+				cpu->std0to4_eflags_revision,
+				cpu->has_cpuid);
+	}
 
-		/* upload a program and run it */
-		if (!announce86_imm(stty_fd,"CPU tests commencing now. Be prepared\r\n")) return 1;
-
-		{
-			unsigned char result[4];
-
-			/* INT 6 undefined opcode test */
-			if (!(sz=upload_code(stty_fd,"cpu/ud_exception_86.bin",seg_alloc)))
-				return 1;
-			if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
-				return 1;
-			if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
-				return 1;
-
-			cpu.has_ud_exception =
-				(result[0] == 1);
-			cpu.has_pop_cs =
-				(result[1] == 1);
-
-			fprintf(stderr,"UD exception=%u, 8086 POP CS=%u\n",
-				cpu.has_ud_exception,
-				cpu.has_pop_cs);
-		}
-
-		{
-			unsigned char result[4];
-
-			/* standard 8086-486 EFLAGS test */
-			if (!(sz=upload_code(stty_fd,"cpu/legacy_cpu_detect.bin",seg_alloc)))
-				return 1;
-			if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
-				return 1;
-			if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
-				return 1;
-
-			cpu.has_cpuid = (result[1] == 1);
-			cpu.std0to4_eflags_revision = result[0];
-			fprintf(stderr,"EFLAGS rev=%u, CPUID=%u\n",
-				cpu.std0to4_eflags_revision,
-				cpu.has_cpuid);
-		}
-
+	if (cpu->std0to4_eflags_revision >= 3) { /* 80386 or higher */
 		/* switch into 386 32-bit mode */
 		if (!remote_rs232_8086(stty_fd))
 			return 1;
@@ -274,6 +257,62 @@ int main(int argc,char **argv) {
 				return 1;
 			}
 		}
+	}
+
+	if (cpu->std0to4_eflags_revision >= 4) { /* 80486 or higher */
+		/* switch into 386 32-bit mode */
+		if (!remote_rs232_8086(stty_fd))
+			return 1;
+		if (!remote_rs232_386_32(stty_fd))
+			return 1;
+
+		{
+			uint32_t d;
+
+			/* cause #AC and note it */
+			if (!(sz=upload_code(stty_fd,"cpu/ac_exception_386-32.bin",0x40000)))
+				return 1;
+			if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
+				return 1;
+
+			fprintf(stderr,"AC=0x%08lX\n",d);
+
+			if (d == 0) {
+				fprintf(stderr,"Awwww, AC never happened\n");
+			}
+			else if (d != 0x12345678) {
+				fprintf(stderr,"Corruption on readback\n");
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
+int main(int argc,char **argv) {
+	struct x86_test_results cpu;
+
+	init_x86_test_results(&cpu);
+
+	if (parse_argv(argc,argv))
+		return 1;
+
+	if ((stty_fd = open(stty_dev,O_RDWR)) < 0) {
+		fprintf(stderr,"Cannot open %s\n",stty_dev);
+		return 1;
+	}
+
+	remote_rs232_configure(stty_fd);
+
+	if (dumb_tty) {
+		do_dumb_tty();
+	}
+	else {
+		if (!run_tests(&cpu,stty_fd))
+			return 1;
 	}
 
 	close(stty_fd);
