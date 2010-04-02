@@ -458,66 +458,58 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 				cpu->has_cpuid);
 	}
 
+	/* switch into 386 32-bit mode */
+	if (!remote_rs232_8086(stty_fd))
+		return 1;
+	if (!remote_rs232_386_32(stty_fd))
+		return 1;
+
 	if (cpu->std0to4_eflags_revision >= 3) { /* 80386 or higher */
-		/* switch into 386 32-bit mode */
-		if (!remote_rs232_8086(stty_fd))
+		uint32_t d;
+
+		/* verify we know how to safely handle #UD in 32-bit */
+		if (!(sz=upload_code(stty_fd,"cpu/ud_verify_386-32.bin",0x40000)))
 			return 1;
-		if (!remote_rs232_386_32(stty_fd))
+		if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
+			return 1;
+		if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
 			return 1;
 
-		{
-			uint32_t d;
+		fprintf(stderr,"UD=0x%08lX\n",d);
 
-			/* verify we know how to safely handle #UD in 32-bit */
-			if (!(sz=upload_code(stty_fd,"cpu/ud_verify_386-32.bin",0x40000)))
-				return 1;
-			if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
-				return 1;
-			if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
-				return 1;
-
-			fprintf(stderr,"UD=0x%08lX\n",d);
-
-			if (d == 0) {
-				fprintf(stderr,"#UD never happened. It might be an undocumented opcode. Stopping tests now.\n");
-				return 1;
-			}
-			else if (d != 0x12345678) {
-				fprintf(stderr,"Corruption on readback\n");
-				return 1;
-			}
+		if (d == 0) {
+			fprintf(stderr,"#UD never happened. It might be an undocumented opcode. Stopping tests now.\n");
+			return 1;
+		}
+		else if (d != 0x12345678) {
+			fprintf(stderr,"Corruption on readback\n");
+			return 1;
 		}
 	}
 
 	if (cpu->std0to4_eflags_revision >= 4) { /* 80486 or higher */
-		/* switch into 386 32-bit mode */
-		if (!remote_rs232_8086(stty_fd))
+		uint32_t d;
+
+		/* cause #AC and note it */
+		if (!(sz=upload_code(stty_fd,"cpu/ac_exception_386-32.bin",0x40000)))
 			return 1;
-		if (!remote_rs232_386_32(stty_fd))
+		if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
+			return 1;
+		if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
 			return 1;
 
-		{
-			uint32_t d;
+		fprintf(stderr,"AC=0x%08lX\n",d);
 
-			/* cause #AC and note it */
-			if (!(sz=upload_code(stty_fd,"cpu/ac_exception_386-32.bin",0x40000)))
-				return 1;
-			if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
-				return 1;
-			if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
-				return 1;
-
-			fprintf(stderr,"AC=0x%08lX\n",d);
-
-			if (d == 0) {
-				fprintf(stderr,"Awwww, AC never happened\n");
-			}
-			else if (d != 0x12345678) {
-				fprintf(stderr,"Corruption on readback\n");
-				return 1;
-			}
-			cpu->has_ac_exception = (d == 0x12345678);
+		if (d == 0) {
+			fprintf(stderr,"Awwww, AC never happened\n");
 		}
+		else if (d != 0x12345678) {
+			fprintf(stderr,"Corruption on readback\n");
+			return 1;
+		}
+		cpu->has_ac_exception = (d == 0x12345678);
+
+		return 1;
 	}
 
 	/* CPUID */
@@ -537,11 +529,6 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		 * [4] R      EDX after 
 		 * [5] R      exceptions that occured */
 
-		/* switch into 386 32-bit mode */
-		if (!remote_rs232_8086(stty_fd))
-			return 1;
-		if (!remote_rs232_386_32(stty_fd))
-			return 1;
 		if (!(sz=upload_code(stty_fd,"cpu/cpuid_386-32.bin",0x40000)))
 			return 1;
 
@@ -759,6 +746,9 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 #undef IDX
 	}
 
+	if (!remote_rs232_8086(stty_fd))
+		return 1;
+
 	return 0;
 }
 
@@ -781,7 +771,7 @@ int main(int argc,char **argv) {
 		do_dumb_tty();
 	}
 	else {
-		if (!run_tests(&cpu,stty_fd))
+		if (run_tests(&cpu,stty_fd))
 			return 1;
 	}
 
