@@ -8,6 +8,13 @@ Makefile.inc:
 Makefile.shinfo:
 	./autodetect-tools sh >Makefile.shinfo
 
+clean:
+	rm -f *.bin *.o *.iso
+	find -name \*~ -delete
+	make -C comm clean
+	make -C eth clean
+	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo
+
 include Makefile.inc
 
 all: floppy.bin cdrom.iso
@@ -92,11 +99,4 @@ stage2-x64-x64.o: stage2-x64.asm
 
 
 
-
-clean:
-	rm -f *.bin *.o *.iso
-	find -name \*~ -delete
-	make -C comm clean
-	make -C eth clean
-	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo
 

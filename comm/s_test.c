@@ -142,7 +142,7 @@ int main(int argc,char **argv) {
 			fprintf(stderr,"failed\n");
 		if (!remote_rs232_386_32(stty_fd))
 			fprintf(stderr,"failed\n");
-#if 0
+#if 1
 		if (!remote_rs232_8086(stty_fd))
 			fprintf(stderr,"failed\n");
 		if (!remote_rs232_x64(stty_fd))
