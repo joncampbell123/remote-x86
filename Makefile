@@ -1,4 +1,4 @@
-all: Makefile.inc Makefile.inc.sh floppy.bin floppy-x64.bin cdrom.iso cdrom-x64.iso
+all: Makefile.inc Makefile.inc.sh floppy.bin cdrom.iso maybe-64 
 	make -C eth
 	make -C comm
 
@@ -8,7 +8,12 @@ Makefile.inc:
 Makefile.inc.sh:
 	./autodetect-tools sh >Makefile.inc.sh
 
-include Makefile.inc.sh
+include Makefile.inc
+
+maybe-64:
+ifneq ($(LD_64),)
+	make floppy-x64.bin cdrom-x64.iso
+endif
 
 stage1-floppy.bin: stage1-floppy.asm
 	nasm -o $@ -f bin $<
