@@ -1,4 +1,4 @@
-all: Makefile.inc Makefile.shinfo floppy.bin cdrom.iso maybe-64 
+all: Makefile.inc Makefile.shinfo
 	make -C eth
 	make -C comm
 
@@ -10,9 +10,9 @@ Makefile.shinfo:
 
 include Makefile.inc
 
-maybe-64:
+all: floppy.bin cdrom.iso
 ifneq ($(LD_64),)
-	make floppy-x64.bin cdrom-x64.iso
+all: floppy-x64.bin cdrom-x64.iso
 endif
 
 stage1-floppy.bin: stage1-floppy.asm
@@ -53,11 +53,11 @@ stage2-386-32.o: stage2-386-32.asm
 stage2-x64-stub.o: stage2-x64-stub.asm
 	nasm -o $@ -f elf32 $<
 
-cdrom.iso: stage1-cdrom.bin
+cdrom.iso: stage1-cdrom.bin stage2.bin
 	cat stage1-cdrom.bin stage2.bin >cdrom.bin
 	mkisofs -o cdrom.iso -R -J -b cdrom.bin -no-emul-boot -boot-load-seg 0x780 -exclude-list cdrom.exclude .
 
-cdrom-x64.iso: stage1-cdrom.bin
+cdrom-x64.iso: stage1-cdrom.bin stage2-x64.bin
 	cat stage1-cdrom.bin stage2-x64.bin >cdrom-x64.bin
 	mkisofs -o cdrom-x64.iso -R -J -b cdrom-x64.bin -no-emul-boot -boot-load-seg 0x780 -exclude-list cdrom.exclude .
 
