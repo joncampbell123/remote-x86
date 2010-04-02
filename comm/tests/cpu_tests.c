@@ -167,6 +167,8 @@ struct x86_test_results {
 		uint32_t	highest_basic;		/* highest CPUID index */
 		uint32_t	highest_extended;	/* highest extended index */
 		char		vendor[12+1];		/* vendor string */
+		char		ext_vendor[12+1];	/* vendor string (ext) */
+		char		processor_name[48+1];	/* extended proc name */
 		unsigned char	stepping;
 		unsigned char	model,ext_model;
 		unsigned char	family,ext_family;
@@ -175,6 +177,11 @@ struct x86_test_results {
 		unsigned int	clflush_size;		/* in bytes */
 		unsigned char	logical_processors;
 		unsigned char	local_apic_id;
+		unsigned char	guest_physical_addr_bits;
+		unsigned char	virtual_addr_bits;
+		unsigned char	physical_addr_bits;
+		unsigned char	apic_id_lsbs_core_id;
+		unsigned int	cores;
 		union cpuid_1_cf {	/* CPUID index 1 ECX */
 			struct {
 				/* 0..7 */
@@ -257,6 +264,129 @@ struct x86_test_results {
 			} f;
 			uint32_t		raw;
 		} cpuid_1_df;
+		union cpuidex_1_cf {	/* CPUID extended index 1 ECX */
+			struct {
+				/* 0..7 */
+				uint32_t	ahf64:1;
+				uint32_t	cmp:1;
+				uint32_t	svm:1;
+				uint32_t	eas:1;
+				uint32_t	cr8d:1;
+				uint32_t	lzcnt:1;
+				uint32_t	sse4a:1;
+				uint32_t	msse:1;
+				/* 8..15 */
+				uint32_t	_3dnow:1;
+				uint32_t	osvw:1;
+				uint32_t	ibs:1;
+				uint32_t	sse5a:1;
+				uint32_t	skinit:1;
+				uint32_t	wdt:1;
+				uint32_t	reserved_14:1;
+				uint32_t	reserved_15:1;
+				/* 16..23 */
+				uint32_t	reserved_16:1;
+				uint32_t	reserved_17:1;
+				uint32_t	reserved_18:1;
+				uint32_t	reserved_19:1;
+				uint32_t	reserved_20:1;
+				uint32_t	reserved_21:1;
+				uint32_t	reserved_22:1;
+				uint32_t	reserved_23:1;
+				/* 24..31 */
+				uint32_t	reserved_24:1;
+				uint32_t	reserved_25:1;
+				uint32_t	reserved_26:1;
+				uint32_t	reserved_27:1;
+				uint32_t	reserved_28:1;
+				uint32_t	reserved_29:1;
+				uint32_t	reserved_30:1;
+				uint32_t	reserved_31:1;
+			} f;
+			uint32_t		raw;
+		} cpuidex_1_cf;
+		union cpuidex_1_df {	/* CPUID extended index 1 EDX */
+			struct {
+				/* 0..7 */
+				uint32_t	fpu:1;
+				uint32_t	vme:1;
+				uint32_t	de:1;
+				uint32_t	pse:1;
+				uint32_t	tsc:1;
+				uint32_t	msr:1;
+				uint32_t	pae:1;
+				uint32_t	mce:1;
+				/* 8..15 */
+				uint32_t	cx8:1;
+				uint32_t	apic:1;
+				uint32_t	reserved_10:1;
+				uint32_t	sep:1;
+				uint32_t	mtrr:1;
+				uint32_t	pge:1;
+				uint32_t	mca:1;
+				uint32_t	cmov:1;
+				/* 16..23 */
+				uint32_t	fcmov:1;
+				uint32_t	pse36:1;
+				uint32_t	reserved_18:1;
+				uint32_t	mp:1;
+				uint32_t	nx:1;
+				uint32_t	reserved_21:1;
+				uint32_t	mmx2:1;
+				uint32_t	mmx:1;
+				/* 24..31 */
+				uint32_t	fxsr:1;
+				uint32_t	ffxsr:1;
+				uint32_t	pg1g:1;
+				uint32_t	tscp:1;
+				uint32_t	reserved_28:1;
+				uint32_t	am64:1;
+				uint32_t	_3dnow2:1;
+				uint32_t	_3dnow:1;
+			} f;
+			uint32_t		raw;
+		} cpuidex_1_df;
+		union cpuidex_7_epm {	/* CPUID extended index 7 EDX */
+			struct {
+				/* 0..7 */
+				uint32_t	ts:1;
+				uint32_t	fid:1;
+				uint32_t	vid:1;
+				uint32_t	ttp:1;
+				uint32_t	tm:1;
+				uint32_t	stc:1;
+				uint32_t	mul100:1;
+				uint32_t	hwps:1;
+				/* 8..15 */
+				uint32_t	itsc:1;
+				uint32_t	reserved_9:1;
+				uint32_t	reserved_10:1;
+				uint32_t	reserved_11:1;
+				uint32_t	reserved_12:1;
+				uint32_t	reserved_13:1;
+				uint32_t	reserved_14:1;
+				uint32_t	reserved_15:1;
+				/* 16..23 */
+				uint32_t	reserved_16:1;
+				uint32_t	reserved_17:1;
+				uint32_t	reserved_18:1;
+				uint32_t	reserved_19:1;
+				uint32_t	reserved_20:1;
+				uint32_t	reserved_21:1;
+				uint32_t	reserved_22:1;
+				uint32_t	reserved_23:1;
+				/* 24..31 */
+				uint32_t	reserved_24:1;
+				uint32_t	reserved_25:1;
+				uint32_t	reserved_26:1;
+				uint32_t	reserved_27:1;
+				uint32_t	reserved_28:1;
+				uint32_t	reserved_29:1;
+				uint32_t	reserved_30:1;
+				uint32_t	reserved_31:1;
+			} f;
+			uint32_t		raw;
+		} cpuidex_7_epm;
 	} cpuid;
 };
 
@@ -397,8 +527,8 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 #define ECX 2
 #define EDX 3
 #define IDX(x) (x*4)
-		uint32_t vals[4*0x10];
-		uint32_t extended[4*0x10];
+		uint32_t vals[4*0x4];
+		uint32_t extended[4*0x9];
 		uint32_t results[0x18/4];
 		/* [0]   W    EAX before CPUID
 		 * [1] R      EAX after
@@ -415,7 +545,7 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		if (!(sz=upload_code(stty_fd,"cpu/cpuid_386-32.bin",0x40000)))
 			return 1;
 
-		for (y=0;y < 0x10;y++) {
+		for (y=0;y < 0x4;y++) {
 			results[0] = y;
 			if (!remote_rs232_write(stty_fd,0x40000,0x4,(void*)(&results[0])))
 				return 1;	
@@ -435,7 +565,7 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 			vals[(y*4)+3] = results[4];
 		}
 
-		for (y=0;y < 0x10;y++) {
+		for (y=0;y < 0x9;y++) {
 			results[0] = y + 0x80000000;
 			if (!remote_rs232_write(stty_fd,0x40000,0x4,(void*)(&results[0])))
 				return 1;	
@@ -467,6 +597,14 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		((uint32_t*)cpu->cpuid.vendor)[2] = vals[2];
 		cpu->cpuid.vendor[12] = 0;
 		fprintf(stderr,"Vendor=%s\n",cpu->cpuid.vendor);
+
+		if (cpu->cpuid.highest_extended >= 0x80000000) {
+			((uint32_t*)cpu->cpuid.ext_vendor)[0] = extended[1];
+			((uint32_t*)cpu->cpuid.ext_vendor)[1] = extended[3];
+			((uint32_t*)cpu->cpuid.ext_vendor)[2] = extended[2];
+			cpu->cpuid.vendor[12] = 0;
+			fprintf(stderr,"Ext. vendor=%s\n",cpu->cpuid.vendor);
+		}
 
 		cpu->cpuid.stepping =	 vals[IDX(1)+EAX]        & 0xF;
 		cpu->cpuid.model =	(vals[IDX(1)+EAX] >>  4) & 0xF;
@@ -531,6 +669,88 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 				X(ss),		X(htt),		X(tm1),
 				X(ia64),	X(pbe));
 #undef X
+
+		/* if PSN is set, get serial number from CPUID #3
+		 * (TODO: drag out the old Pentium III and test this) */
+
+		if (cpu->cpuid.highest_extended >= 0x80000000) {
+			char *src = (char*)(&extended[IDX(2)]);
+			char *src_f = src+48;
+			while (src < src_f && *src == ' ') src++;
+			char *dst = cpu->cpuid.processor_name;
+			while (*src != 0 && src < src_f) *dst++ = *src++;
+			*dst = 0;
+			fprintf(stderr,"CPU name='%s'\n",cpu->cpuid.processor_name);
+
+#define X(x) cpu->cpuid.cpuidex_1_cf.f.x
+			cpu->cpuid.cpuidex_1_cf.raw = extended[IDX(1)+ECX];
+			fprintf(stderr,"ahf64=%u cmp=%u svm=%u eas=%u "
+					"cr8d=%u lzcnt=%u sse4a=%u msse=%u\n",
+					X(ahf64),	X(cmp),		X(svm),
+					X(eas),		X(cr8d),	X(lzcnt),
+					X(sse4a),	X(msse));
+			fprintf(stderr,"3dnow=%u osvw=%u ibs=%u sse5a=%u "
+					"skinit=%u wdt=%u\n",
+					X(_3dnow),	X(osvw),	X(ibs),
+					X(sse5a),	X(skinit),	X(wdt));
+#undef X
+
+#define X(x) cpu->cpuid.cpuidex_1_df.f.x
+			cpu->cpuid.cpuidex_1_df.raw = extended[IDX(1)+EDX];
+			fprintf(stderr,"fpu=%u vme=%u de=%u pse=%u "
+					"tsc=%u msr=%u pae=%u mce=%u\n",
+					X(fpu),		X(vme),		X(de),
+					X(pse),		X(tsc),		X(msr),
+					X(pae),		X(mce));
+			fprintf(stderr,"cx8=%u apic=%u sep=%u mtrr=%u "
+					"pge=%u mca=%u cmov=%u\n",
+					X(cx8),		X(apic),	X(sep),
+					X(mtrr),	X(pge),		X(mca),
+					X(cmov));
+			fprintf(stderr,"fcmov=%u pse36=%u mp=%u nx=%u "
+					"mmx2=%u mmx=%u\n",
+					X(fcmov),	X(pse36),	X(mp),
+					X(nx),		X(mmx2),	X(mmx));
+			fprintf(stderr,"fxsr=%u ffxsr=%u pg1g=%u tscp=%u "
+					"am64=%u 3dnow2=%u 3dnow=%u\n",
+					X(fxsr),	X(ffxsr),	X(pg1g),
+					X(tscp),	X(am64),	X(_3dnow2),
+					X(_3dnow));
+#undef X
+		}
+
+		if (cpu->cpuid.highest_extended >= 0x80000007) {
+#define X(x) cpu->cpuid.cpuidex_7_epm.f.x
+			cpu->cpuid.cpuidex_7_epm.raw = extended[IDX(7)+EDX];
+			fprintf(stderr,"ts=%u fid=%u vid=%u ttp=%u tm=%u "
+					"stc=%u mul100=%u hwps=%u itsc=%u\n",
+					X(ts),		X(fid),		X(vid),
+					X(ttp),		X(tm),		X(stc),
+					X(mul100),	X(hwps),	X(itsc));
+#undef X
+		}
+
+		if (cpu->cpuid.highest_extended >= 0x80000008) {
+			cpu->cpuid.guest_physical_addr_bits =
+				(extended[IDX(8)+EAX] >> 16) & 0xFF;
+			cpu->cpuid.virtual_addr_bits =
+				(extended[IDX(8)+EAX] >> 8) & 0xFF;
+			cpu->cpuid.physical_addr_bits =
+				extended[IDX(8)+EAX] & 0xFF;
+			cpu->cpuid.apic_id_lsbs_core_id =
+				(extended[IDX(8)+ECX] >> 12) & 0xF;
+			cpu->cpuid.cores =
+				(extended[IDX(8)+ECX] & 0xFF) + 1;
+
+			fprintf(stderr,"guest_phys_addr_bits=%u virt_addr_bits=%u "
+				"phys_addr_bits=%u cores=%u core_apic_lsbs=%u\n",
+				cpu->cpuid.guest_physical_addr_bits,
+				cpu->cpuid.virtual_addr_bits,
+				cpu->cpuid.physical_addr_bits,
+				cpu->cpuid.cores,
+				cpu->cpuid.apic_id_lsbs_core_id);
+
+		}
 
 #undef EAX
 #undef EBX
