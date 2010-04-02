@@ -1,0 +1,5 @@
+#!/bin/bash
+make clean || exit 1
+svn add * */* */*/* */*/*/*
+svn commit --message x
+

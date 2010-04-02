@@ -156,6 +156,9 @@ struct x86_test_results {
 	/* has CPUID (486, Pentium+) */
 	unsigned int	has_cpuid:1;
 
+	/* the CPU supports Alignment Check and will signal AC# */
+	unsigned int	has_ac_exception:1;
+
 	/* 8086-486 standard revision eflags test result (0-4) */
 	unsigned char	std0to4_eflags_revision;
 };
@@ -286,6 +289,58 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 				fprintf(stderr,"Corruption on readback\n");
 				return 1;
 			}
+			cpu->has_ac_exception = (d == 0x12345678);
+		}
+	}
+
+	/* CPUID */
+	if (cpu->has_cpuid) {
+		uint32_t vals[4*0x10];
+		uint32_t extended[4*0x10];
+		uint32_t results[0x18/4];
+		/* [0]   W    EAX before CPUID
+		 * [1] R      EAX after
+		 * [2] R      EBX after
+		 * [3] R      ECX after
+		 * [4] R      EDX after 
+		 * [5] R      exceptions that occured */
+
+		/* switch into 386 32-bit mode */
+		if (!remote_rs232_8086(stty_fd))
+			return 1;
+		if (!remote_rs232_386_32(stty_fd))
+			return 1;
+		if (!(sz=upload_code(stty_fd,"cpu/cpuid_386-32.bin",0x40000)))
+			return 1;
+
+		for (y=0;y < 0x10;y++) {
+			results[0] = y;
+			if (!remote_rs232_write(stty_fd,0x40000,0x4,(void*)(&results[0])))
+				return 1;	
+			if (!remote_rs232_exec_off(stty_fd,0x40000+0x18,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,0x40000,0x18,
+				(void*)(&results[0])))
+				return 1;
+
+			fprintf(stderr,"[0x%08X]: A=%08X B=%08X C=%08X D=%08X X=%08X\n",
+				results[0],results[1],results[2],
+				results[3],results[4],results[5]);
+		}
+
+		for (y=0;y < 0x10;y++) {
+			results[0] = y + 0x80000000;
+			if (!remote_rs232_write(stty_fd,0x40000,0x4,(void*)(&results[0])))
+				return 1;	
+			if (!remote_rs232_exec_off(stty_fd,0x40000+0x18,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,0x40000,0x18,
+				(void*)(&results[0])))
+				return 1;
+
+			fprintf(stderr,"[0x%08X]: A=%08X B=%08X C=%08X D=%08X X=%08X\n",
+				results[0],results[1],results[2],
+				results[3],results[4],results[5]);
 		}
 	}
 
