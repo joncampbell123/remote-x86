@@ -23,11 +23,17 @@ else
 	OC_64=x86_64-pc-linux-gnu-objcopy
 fi
 
-if [ "`which $CC_64`" == "" ]; then
+firstword() {
+	echo $1
+}
+
+CC_64_FW=`firstword $CC_64`
+if [ "`which \"$CC_64_FW\"`" == "" ]; then
 	CC_64=
 fi
 
-if [ "`which $LD_64`" == "" ]; then
+LD_64_FW=`firstword $LD_64`
+if [ "`which \"$LD_64_FW\"`" == "" ]; then
 	LD_64=
 	AS_64=
 	OC_64=
