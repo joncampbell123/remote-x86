@@ -1,12 +1,12 @@
-all: Makefile.inc Makefile.inc.sh floppy.bin cdrom.iso maybe-64 
+all: Makefile.inc Makefile.shinfo floppy.bin cdrom.iso maybe-64 
 	make -C eth
 	make -C comm
 
 Makefile.inc:
 	./autodetect-tools make >Makefile.inc
 
-Makefile.inc.sh:
-	./autodetect-tools sh >Makefile.inc.sh
+Makefile.shinfo:
+	./autodetect-tools sh >Makefile.shinfo
 
 include Makefile.inc
 
@@ -98,5 +98,5 @@ clean:
 	find -name \*~ -delete
 	make -C comm clean
 	make -C eth clean
-	rm -f Makefile.inc Makefile.inc.sh
+	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo
 

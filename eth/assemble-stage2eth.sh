@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. ../Makefile.inc.sh
+. ../Makefile.shinfo
 
 # okay glom together
 $LD_32 -m elf_i386 -o stage2eth.o --oformat elf32-i386 -A i386 $* -Ttext 0x8000 || exit 1
