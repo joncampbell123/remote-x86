@@ -145,7 +145,30 @@ int announce86_imm(int sfd,const char *str) {
 	return announce86_call(sfd,seg_announce86>>4,seg_announce86_buffer-seg_announce86);
 }
 
+/* what we know about the CPU */
+struct x86_test_results {
+	/* signals INT 6 (#UD) on invalid opcode ( > 8086 ) */
+	unsigned int	has_ud_exception:1;
+
+	/* decodes 0xF as POP CS (8088/8086) */
+	unsigned int 	has_pop_cs:1;
+
+	/* has CPUID (486, Pentium+) */
+	unsigned int	has_cpuid:1;
+
+	/* 8086-486 standard revision eflags test result (0-4) */
+	unsigned char	std0to4_eflags_revision;
+};
+
+void init_x86_test_results(struct x86_test_results *r) {
+	memset(r,0,sizeof(*r));
+}
+
 int main(int argc,char **argv) {
+	struct x86_test_results cpu;
+
+	init_x86_test_results(&cpu);
+
 	if (parse_argv(argc,argv))
 		return 1;
 
@@ -194,21 +217,62 @@ int main(int argc,char **argv) {
 				return 1;
 			if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
 				return 1;
-			fprintf(stderr,"UD exception = %u\n",result[0]);
-			fprintf(stderr,"8086 POP CS = %u\n",result[1]);
+
+			cpu.has_ud_exception =
+				(result[0] == 1);
+			cpu.has_pop_cs =
+				(result[1] == 1);
+
+			fprintf(stderr,"UD exception=%u, 8086 POP CS=%u\n",
+				cpu.has_ud_exception,
+				cpu.has_pop_cs);
 		}
 
 		{
 			unsigned char result[4];
 
-			/* INT 6 undefined opcode test */
+			/* standard 8086-486 EFLAGS test */
 			if (!(sz=upload_code(stty_fd,"cpu/legacy_cpu_detect.bin",seg_alloc)))
 				return 1;
 			if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
 				return 1;
 			if (!remote_rs232_read(stty_fd,seg_alloc,4,result))
 				return 1;
-			fprintf(stderr,"Rev = %u, CPUID = %u\n",result[0],result[1]);
+
+			cpu.has_cpuid = (result[1] == 1);
+			cpu.std0to4_eflags_revision = result[0];
+			fprintf(stderr,"EFLAGS rev=%u, CPUID=%u\n",
+				cpu.std0to4_eflags_revision,
+				cpu.has_cpuid);
+		}
+
+		/* switch into 386 32-bit mode */
+		if (!remote_rs232_8086(stty_fd))
+			return 1;
+		if (!remote_rs232_386_32(stty_fd))
+			return 1;
+
+		{
+			uint32_t d;
+
+			/* verify we know how to safely handle #UD in 32-bit */
+			if (!(sz=upload_code(stty_fd,"cpu/ud_verify_386-32.bin",0x40000)))
+				return 1;
+			if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
+				return 1;
+
+			fprintf(stderr,"UD=0x%08lX\n",d);
+
+			if (d == 0) {
+				fprintf(stderr,"#UD never happened. It might be an undocumented opcode. Stopping tests now.\n");
+				return 1;
+			}
+			else if (d != 0x12345678) {
+				fprintf(stderr,"Corruption on readback\n");
+				return 1;
+			}
 		}
 	}
 
