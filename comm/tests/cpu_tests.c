@@ -161,6 +161,103 @@ struct x86_test_results {
 
 	/* 8086-486 standard revision eflags test result (0-4) */
 	unsigned char	std0to4_eflags_revision;
+
+	/* CPUID */
+	struct cpuid {
+		uint32_t	highest_basic;		/* highest CPUID index */
+		uint32_t	highest_extended;	/* highest extended index */
+		char		vendor[12+1];		/* vendor string */
+		unsigned char	stepping;
+		unsigned char	model,ext_model;
+		unsigned char	family,ext_family;
+		unsigned char	type;
+		unsigned char	brand_id;
+		unsigned int	clflush_size;		/* in bytes */
+		unsigned char	logical_processors;
+		unsigned char	local_apic_id;
+		union cpuid_1_cf {	/* CPUID index 1 ECX */
+			struct {
+				/* 0..7 */
+				uint32_t	sse3:1;
+				uint32_t	pclmul:1;
+				uint32_t	dtes64:1;
+				uint32_t	mon:1;
+				uint32_t	dscpl:1;
+				uint32_t	vmx:1;
+				uint32_t	smx:1;
+				uint32_t	est:1;
+				/* 8..15 */
+				uint32_t	tm2:1;
+				uint32_t	ssse3:1;
+				uint32_t	l1dccm:1;
+				uint32_t	reserved_11:1;
+				uint32_t	fma:1;
+				uint32_t	cmpxchg16b:1;
+				uint32_t	etprd:1;
+				uint32_t	pdcm:1;
+				/* 16..23 */
+				uint32_t	reserved_16:1;
+				uint32_t	reserved_17:1;
+				uint32_t	dca:1;
+				uint32_t	sse41:1;
+				uint32_t	sse42:1;
+				uint32_t	xapic:1;
+				uint32_t	movbe:1;
+				uint32_t	popcnt:1;
+				/* 24..31 */
+				uint32_t	reserved_24:1;
+				uint32_t	aes:1;
+				uint32_t	xsave:1;
+				uint32_t	osxsave:1;
+				uint32_t	avx:1;
+				uint32_t	reserved_29:1;
+				uint32_t	reserved_30:1;
+				uint32_t	reserved_31:1;
+			} f;
+			uint32_t		raw;
+		} cpuid_1_cf;
+		union cpuid_1_df {	/* CPUID index 1 EDX */
+			struct {
+				/* 0..7 */
+				uint32_t	fpu:1;
+				uint32_t	vme:1;
+				uint32_t	de:1;
+				uint32_t	pse:1;
+				uint32_t	tsc:1;
+				uint32_t	msr:1;
+				uint32_t	pae:1;
+				uint32_t	mce:1;
+				/* 8..15 */
+				uint32_t	cx8:1;
+				uint32_t	apic:1;
+				uint32_t	reserved_10:1;
+				uint32_t	sep:1;
+				uint32_t	mtrr:1;
+				uint32_t	pge:1;
+				uint32_t	mca:1;
+				uint32_t	cmov:1;
+				/* 16..23 */
+				uint32_t	pat:1;
+				uint32_t	pse36:1;
+				uint32_t	psn:1;
+				uint32_t	clfl:1;
+				uint32_t	reserved_20:1;
+				uint32_t	dtes:1;
+				uint32_t	acpi:1;
+				uint32_t	mmx:1;
+				/* 24..31 */
+				uint32_t	fxsr:1;
+				uint32_t	sse:1;
+				uint32_t	sse2:1;
+				uint32_t	ss:1;
+				uint32_t	htt:1;
+				uint32_t	tm1:1;
+				uint32_t	ia64:1;
+				uint32_t	pbe:1;
+			} f;
+			uint32_t		raw;
+		} cpuid_1_df;
+	} cpuid;
 };
 
 void init_x86_test_results(struct x86_test_results *r) {
@@ -295,6 +392,11 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 
 	/* CPUID */
 	if (cpu->has_cpuid) {
+#define EAX 0
+#define EBX 1
+#define ECX 2
+#define EDX 3
+#define IDX(x) (x*4)
 		uint32_t vals[4*0x10];
 		uint32_t extended[4*0x10];
 		uint32_t results[0x18/4];
@@ -326,6 +428,11 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 			fprintf(stderr,"[0x%08X]: A=%08X B=%08X C=%08X D=%08X X=%08X\n",
 				results[0],results[1],results[2],
 				results[3],results[4],results[5]);
+
+			vals[(y*4)+0] = results[1];
+			vals[(y*4)+1] = results[2];
+			vals[(y*4)+2] = results[3];
+			vals[(y*4)+3] = results[4];
 		}
 
 		for (y=0;y < 0x10;y++) {
@@ -341,7 +448,95 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 			fprintf(stderr,"[0x%08X]: A=%08X B=%08X C=%08X D=%08X X=%08X\n",
 				results[0],results[1],results[2],
 				results[3],results[4],results[5]);
+
+			extended[(y*4)+0] = results[1];
+			extended[(y*4)+1] = results[2];
+			extended[(y*4)+2] = results[3];
+			extended[(y*4)+3] = results[4];
 		}
+
+		cpu->cpuid.highest_basic = vals[0];
+		cpu->cpuid.highest_extended = extended[0];
+		fprintf(stderr,"Highest basic CPUID index=0x%08X, "
+			"Highest basic extended=0x%08X\n",
+			cpu->cpuid.highest_basic,
+			cpu->cpuid.highest_extended);
+
+		((uint32_t*)cpu->cpuid.vendor)[0] = vals[1];
+		((uint32_t*)cpu->cpuid.vendor)[1] = vals[3];
+		((uint32_t*)cpu->cpuid.vendor)[2] = vals[2];
+		cpu->cpuid.vendor[12] = 0;
+		fprintf(stderr,"Vendor=%s\n",cpu->cpuid.vendor);
+
+		cpu->cpuid.stepping =	 vals[IDX(1)+EAX]        & 0xF;
+		cpu->cpuid.model =	(vals[IDX(1)+EAX] >>  4) & 0xF;
+		cpu->cpuid.family =	(vals[IDX(1)+EAX] >>  8) & 0xF;
+		cpu->cpuid.type =	(vals[IDX(1)+EAX] >> 12) & 0x3;
+		cpu->cpuid.ext_model =	(vals[IDX(1)+EAX] >> 16) & 0xF;
+		cpu->cpuid.ext_family =	(vals[IDX(1)+EAX] >> 20) & 0xFF;
+		fprintf(stderr,"step=%u model=%u fam=%u type=%u extmodel=%u extfam=%u\n",
+			cpu->cpuid.stepping,	cpu->cpuid.model,
+			cpu->cpuid.family,	cpu->cpuid.type,
+			cpu->cpuid.ext_model,	cpu->cpuid.ext_family);
+
+		cpu->cpuid.brand_id =		  vals[IDX(1)+EBX]        & 0xFF;
+		cpu->cpuid.clflush_size =	((vals[IDX(1)+EBX] >>  8) & 0xFF) * 8;
+		cpu->cpuid.logical_processors =	 (vals[IDX(1)+EBX] >> 16) & 0xFF;
+		cpu->cpuid.local_apic_id =	 (vals[IDX(1)+EBX] >> 24);
+		fprintf(stderr,"brand=0x%02X clflush=%u logical_cpus=%u lapic_id=%u\n",
+			cpu->cpuid.brand_id,		cpu->cpuid.clflush_size,
+			cpu->cpuid.logical_processors,	cpu->cpuid.local_apic_id);
+
+#define X(x) cpu->cpuid.cpuid_1_cf.f.x
+		cpu->cpuid.cpuid_1_cf.raw = vals[IDX(1)+ECX];
+		fprintf(stderr,"sse3=%u pclmul=%u dtes64=%u mon=%u "
+				"dscpl=%u vmx=%u smx=%u est=%u\n",
+				X(sse3),	X(pclmul),	X(dtes64),
+				X(mon),		X(dscpl),	X(vmx),
+				X(smx),		X(est));
+		fprintf(stderr,"tm2=%u ssse3=%u l1dccm=%u fma=%u "
+				"cmpxchg16b=%u etprd=%u pdcm=%u\n",
+				X(tm2),		X(ssse3),	X(l1dccm),
+				X(fma),		X(cmpxchg16b),	X(etprd),
+				X(pdcm));
+		fprintf(stderr,"dca=%u sse4.1=%u sse4.2=%u xapic=%u "
+				"movbe=%u popcnt=%u\n",
+				X(dca),		X(sse41),	X(sse42),
+				X(xapic),	X(movbe),	X(popcnt));
+		fprintf(stderr,"aes=%u xsave=%u osxsave=%u avx=%u\n",
+				X(aes),		X(xsave),	X(osxsave),
+				X(avx));
+#undef X
+
+#define X(x) cpu->cpuid.cpuid_1_df.f.x
+		cpu->cpuid.cpuid_1_df.raw = vals[IDX(1)+EDX];
+		fprintf(stderr,"fpu=%u vme=%u de=%u pse=%u "
+				"tsc=%u msr=%u pae=%u mce=%u\n",
+				X(fpu),		X(vme),		X(de),
+				X(pse),		X(tsc),		X(msr),
+				X(pae),		X(mce));
+		fprintf(stderr,"cx8=%u apic=%u sep=%u mtrr=%u "
+				"pge=%u mca=%u cmov=%u\n",
+				X(cx8),		X(apic),	X(sep),
+				X(mtrr),	X(pge),		X(mca),
+				X(cmov));
+		fprintf(stderr,"pat=%u pse36=%u psn=%u clflush=%u "
+				"dtes=%u acpi=%u mmx=%u\n",
+				X(pat),		X(pse36),	X(psn),
+				X(clfl),	X(dtes),	X(acpi),
+				X(mmx));
+		fprintf(stderr,"fxsr=%u sse=%u sse2=%u selfsnoop=%u "
+				"hyperthread=%u therm=%u ia64=%u pbe=%u\n",
+				X(fxsr),	X(sse),		X(sse2),
+				X(ss),		X(htt),		X(tm1),
+				X(ia64),	X(pbe));
+#undef X
+
+#undef EAX
+#undef EBX
+#undef ECX
+#undef EDX
+#undef IDX
 	}
 
 	return 0;
