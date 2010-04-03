@@ -162,6 +162,15 @@ struct x86_test_results {
 	/* 8086-486 standard revision eflags test result (0-4) */
 	unsigned char	std0to4_eflags_revision;
 
+	/* the maximum memory address supported by the CPU (by it's basic design, 8086=1MB 286=16MB 386+=4GB, etc. not necessarily how many address pins) */
+	unsigned int	max_basic_memory_address_bits;
+	unsigned int	max_address_pins;		/* if we know the CPU model, how many actual CPU address pins there are */
+	unsigned int	max_upper_bios_bits;		/* number of bits decoded for the upper ROM BIOS area (4GB-1) */
+	unsigned int	max_legacy_bios_bits;		/* number of bits decoded for the legacy ROM BIOS area (0xF0000-0xFFFFF) */
+	unsigned int	max_legacy_vga_bits;		/* number of bits decoded for the VGA display area (0xB8000-0xB8FFF) */
+	unsigned int	max_legacy_dosmem_bits;		/* number of bits decoded for the "DOS" area (first 1MB) */
+	unsigned int	max_extmem_bits;		/* number of bits decoded for extended memory (beyond the first 1MB) */
+
 	/* CPUID */
 	struct cpuid {
 		uint32_t	highest_basic;		/* highest CPUID index */
@@ -417,15 +426,19 @@ int a20_enabled_mem_test(int stty_fd) {
 		return 0;
 
 	if (!memcmp(buf0,buf1,32)) {
+		char nbuf0[32];
+
 		fprintf(stderr,"Just to be sure...\n");
 
 		/* it might just be a coincidence, try writing to the memory and see if the alias shows it */
-		memset(buf0,'x',32);
-		if (!remote_rs232_write(stty_fd,0x300,32,buf0))
+		memset(nbuf0,'x',32);
+		if (!remote_rs232_write(stty_fd,0x300,32,nbuf0))
 			return 0;
 		if (!remote_rs232_read(stty_fd,0x300|(1<<20),32,buf1))
 			return 0;
-		if (!memcmp(buf0,buf1,32))
+		if (!remote_rs232_write(stty_fd,0x300,32,buf0))
+			return 0;
+		if (!memcmp(nbuf0,buf1,32))
 			return 0;
 
 		fprintf(stderr,"  0x000300: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",buf0[i]); fprintf(stderr,"\n");
@@ -437,8 +450,15 @@ int a20_enabled_mem_test(int stty_fd) {
 	return 1;
 }
 
+/* NOTES:
+ *
+ *     On a 286, we try to exit out before the 386 tests, leaving the CPU in
+ *     protected mode in case the machine is funky and can't leave properly
+ *
+ */
 int run_tests(struct x86_test_results *cpu,int stty_fd) {
 	unsigned char buf[80*25*2];
+	uint32_t d;
 	int x,y,sz;
 
 	remote_rs232_test(stty_fd);
@@ -468,10 +488,12 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 	/* upload a program and run it */
 	if (!announce86_imm(stty_fd,"CPU tests commencing now. Be prepared\r\n")) return 1;
 
+/*========= TEST: Does the CPU silently ignore invalid opcodes like an 8086, or does it signal #UD (INT 6)?
+ *                Part of this test involves POP CS, so if the CPU would actually load CS from the stack, we'll
+ *                know from this test. */
 	{
 		unsigned char result[4];
 
-		/* INT 6 undefined opcode test */
 		if (!(sz=upload_code(stty_fd,"cpu/ud_exception_86.bin",seg_alloc)))
 			return 1;
 		if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
@@ -489,10 +511,10 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 				cpu->has_pop_cs);
 	}
 
+/*========= TEST: The official standard EFLAGS test for 8086/286/386/486. Everybody knows this one, I'm sure */
 	{
 		unsigned char result[4];
 
-		/* standard 8086-486 EFLAGS test */
 		if (!(sz=upload_code(stty_fd,"cpu/legacy_cpu_detect.bin",seg_alloc)))
 			return 1;
 		if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0004,10))
@@ -507,11 +529,33 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 				cpu->has_cpuid);
 	}
 
-	/* switch into 286 16-bit mode */
-	if (!remote_rs232_8086(stty_fd))
-		return 1;
-	if (!remote_rs232_286(stty_fd))
-		return 1;
+	/* based on that, what's the basic max memory address */
+	/* TODO: x64 hosts? */
+	if (cpu->std0to4_eflags_revision >= 3)
+		cpu->max_basic_memory_address_bits = 32;		// 4GB
+	else if (cpu->std0to4_eflags_revision >= 2)
+		cpu->max_basic_memory_address_bits = 24;		// 16MB
+	else
+		cpu->max_basic_memory_address_bits = 20;		// 1MB
+
+	/* assume the CPU has at least that many address pins */
+	cpu->max_address_pins = cpu->max_basic_memory_address_bits;
+
+/*========================================= 80286 or higher beyond this point ===============================*/
+	if (cpu->std0to4_eflags_revision < 2)
+		return 0;
+
+	/* HACK: Apparently some really old 386 laptops I have don't properly support the 286 reset trick.
+	 *       Therefore, if we go into 286 protected mode we'll never get out properly and the test
+	 *       will get stuck. Apparently on one, the BIOS will happily hang or beep a lot. */
+	if (cpu->std0to4_eflags_revision >= 3) {	/* 386 or higher, use 16-bit 386 mode (our tests only care that it's 16-bit) */
+		if (!remote_rs232_386_16(stty_fd))
+			return 1;
+	}
+	else {						/* else use 286 16-bit mode */
+		if (!remote_rs232_286(stty_fd))
+			return 1;
+	}
 
 	/* enable A20 */
 	if (!a20_enabled_mem_test(stty_fd)) {
@@ -540,9 +584,13 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 	}
 
 	if (!a20_enabled_mem_test(stty_fd)) {
-		fprintf(stderr,"A20 doesn't seem to be enabled\n");
+		fprintf(stderr,"A20 doesn't seem to be enabled. I can't reliably carry out tests for 286+ machines without extended memory.\n");
 		return 1;
 	}
+
+/*========================================= 80386 or higher beyond this point ===============================*/
+	if (cpu->std0to4_eflags_revision < 3)
+		return 0;
 
 	/* switch into 386 32-bit mode */
 	if (!remote_rs232_8086(stty_fd))
@@ -550,54 +598,64 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 	if (!remote_rs232_386_32(stty_fd))
 		return 1;
 
-	if (cpu->std0to4_eflags_revision >= 3) { /* 80386 or higher */
-		uint32_t d;
+/*======== TEST: My programming skills are smart enough to handle a #UD exception in 32-bit protected mode */
+	if (!(sz=upload_code(stty_fd,"cpu/ud_verify_386-32.bin",0x40000)))
+		return 1;
+	if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
+		return 1;
+	if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
+		return 1;
 
+	fprintf(stderr,"UD=0x%08lX\n",d);
+
+	if (d == 0) {
+		fprintf(stderr,"#UD never happened. It might be an undocumented opcode. Stopping tests now.\n");
+		return 1;
+	}
+	else if (d != 0x12345678) {
+		fprintf(stderr,"Corruption on readback\n");
+		return 1;
+	}
+
+/*======== TEST: The 80386 POPAD bug, said to affect some 386SX and all 386DX Intel+AMD CPUs */
+/*               TODO: Find a 386DX and run this test on it, see if it works */
+	if (cpu->std0to4_eflags_revision == 3) { /* 386 only, no later revisions */
 		/* verify we know how to safely handle #UD in 32-bit */
-		if (!(sz=upload_code(stty_fd,"cpu/ud_verify_386-32.bin",0x40000)))
+		if (!(sz=upload_code(stty_fd,"cpu/386_popad.bin",0x40000)))
 			return 1;
 		if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
 			return 1;
 		if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
 			return 1;
 
-		fprintf(stderr,"UD=0x%08lX\n",d);
-
-		if (d == 0) {
-			fprintf(stderr,"#UD never happened. It might be an undocumented opcode. Stopping tests now.\n");
-			return 1;
-		}
-		else if (d != 0x12345678) {
-			fprintf(stderr,"Corruption on readback\n");
-			return 1;
-		}
+		fprintf(stderr,"POPAD_BUG=0x%08lX\n",d);
 	}
 
-	if (cpu->std0to4_eflags_revision >= 3) { /* 80486 or higher has Alignment Check exception. Just for testing, we attempt it on the 386 too */
-		uint32_t d;
+/*========================================= 80486 or higher beyond this point ===============================*/
+	if (cpu->std0to4_eflags_revision < 4)
+		return 0;
 
-		/* cause #AC and note it */
-		if (!(sz=upload_code(stty_fd,"cpu/ac_exception_386-32.bin",0x40000)))
-			return 1;
-		if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
-			return 1;
-		if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
-			return 1;
+	/* cause #AC and note it */
+	if (!(sz=upload_code(stty_fd,"cpu/ac_exception_386-32.bin",0x40000)))
+		return 1;
+	if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
+		return 1;
+	if (!remote_rs232_read(stty_fd,0x40000,4,(void*)(&d)))
+		return 1;
 
-		fprintf(stderr,"AC=0x%08lX\n",d);
+	fprintf(stderr,"AC=0x%08lX\n",d);
 
-		if (d == 0) {
-			if (cpu->std0to4_eflags_revision >= 4) /* if it SHOULD have happened, then say so */
-				fprintf(stderr,"Awwww, AC never happened\n");
-		}
-		else if (d != 0x12345678) {
-			fprintf(stderr,"Corruption on readback\n");
-			return 1;
-		}
-		cpu->has_ac_exception = (d == 0x12345678);
+	if (d == 0) {
+		if (cpu->std0to4_eflags_revision >= 4) /* if it SHOULD have happened, then say so */
+			fprintf(stderr,"Awwww, AC never happened. Your 486+ is weird...\n");
 	}
+	else if (d != 0x12345678) {
+		fprintf(stderr,"Corruption on readback\n");
+		return 1;
+	}
+	cpu->has_ac_exception = (d == 0x12345678);
 
-	/* CPUID */
+/*======== TEST: If CPUID is present, read off the basic CPUID info */
 	if (cpu->has_cpuid) {
 #define EAX 0
 #define EBX 1
@@ -613,6 +671,12 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		 * [3] R      ECX after
 		 * [4] R      EDX after 
 		 * [5] R      exceptions that occured */
+
+		/* switch into 386 32-bit mode */
+		if (!remote_rs232_8086(stty_fd))
+			return 1;
+		if (!remote_rs232_386_32(stty_fd))
+			return 1;
 
 		if (!(sz=upload_code(stty_fd,"cpu/cpuid_386-32.bin",0x40000)))
 			return 1;
@@ -831,7 +895,7 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 #undef IDX
 	}
 
-	/* RDMSR */
+/*======== TEST: If CPUID says that machine status registers are present, then, read them off */
 	if (cpu->cpuid.cpuid_1_df.f.msr) {
 #define EXCEPT 0
 #define EAX 1
@@ -883,8 +947,278 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		}
 	}
 
-	if (!remote_rs232_8086(stty_fd))
-		return 1;
+	return 0;
+}
+
+int run_memory_aliasing_tests(struct x86_test_results *cpu,int stty_fd) {
+	uint64_t max_basic_mem_address;
+	unsigned int i;
+
+	/* aliasing tests don't apply to the 8086, because A0-A19 are typically connected and compared correctly */
+	if (cpu->std0to4_eflags_revision < 2)
+		return 0;
+	if (cpu->max_basic_memory_address_bits < 20)
+		return 0;
+
+	max_basic_mem_address = (1ULL << (uint64_t)(cpu->max_basic_memory_address_bits)) - 1ULL;
+
+	/* ROM aliasing test (topmost ROM BIOS region).
+	 * This is the actual ROM image that the CPU boots from.
+	 * On a 286 or 386SX this is 0xFFFFF0, on a 386 or higher it is 0xFFFFFFF0.
+	 * Sometimes the ROM BIOS will alias differently from the rest of the memory.
+	 * On anything Pentium-class or higher, this will likely differ from the
+	 * "legacy" BIOS region because of BIOSes that decompress themselves from
+	 * EEPROM, or because of shadowing. */
+	{
+		unsigned char hirom[512],compare[512];
+		uint64_t max = max_basic_mem_address >> 1ULL;
+		unsigned int max_bits = cpu->max_basic_memory_address_bits - 1;
+		if (!remote_rs232_read(stty_fd,max_basic_mem_address + 1ULL - 512ULL,512,hirom))
+			return 1;
+
+		/* start scanning and comparing */
+		while (1) {
+			if (!remote_rs232_read(stty_fd,max + 1ULL - 512ULL,512,compare))
+				return 1;
+			if (memcmp(compare,hirom,512)) {
+				/* well, now it differs */
+				max_bits++;
+				max <<= 1;
+				break;
+			}
+
+			max >>= 1;
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				max = max_basic_mem_address;
+				break;
+			}
+		}
+
+		cpu->max_upper_bios_bits = max_bits;
+	}
+
+	/* ROM aliasing test (legacy ROM BIOS region).
+	 * in newer machines this is either the last 64KB-128KB of the actual ROM, a
+	 * decompressed shadow copy, or something else entirely. In older machines,
+	 * this is likely a direct alias of the ROM BIOS */
+	{
+		unsigned char legrom[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		if (!remote_rs232_read(stty_fd,0x100000 - 512,512,legrom))	/* 512 back from the 1MB boundary */
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base + 0x100000 - 512ULL,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,legrom,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base + 0x100000 - 512ULL,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,legrom,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy BIOS scan results\n");
+		cpu->max_legacy_bios_bits = lower;
+	}
+
+	/* VGA legacy display aliasing. Assuming the BIOS left the VGA display in mode 3, we
+	 * can play with the 0xB8000-0xBFFFF area and detect aliasing that way. On most old
+	 * machines, the VGA card is on the ISA bus, so this can be an indication of ISA bus
+	 * aliasing. */
+	{
+		unsigned char display[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		if (!remote_rs232_read(stty_fd,0xB8000,512,display))
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base + 0xB8000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,display,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base + 0xB8000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,display,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy VGA scan results\n");
+		cpu->max_legacy_vga_bits = lower;
+	}
+
+	/* DOS memory aliasing. Perhaps some motherboards treat this range separately. Most likely not, but
+	 * it's fun to look for weird flaws like that */
+	{
+		unsigned char display[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		/* WARNING: we assume that the BIOS has something there.
+		 *          After all---that's where the real-mode interrupt table is supposed to be!
+		 *          There's something seriously wrong with a BIOS that leaves nothing there! */
+
+		if (!remote_rs232_read(stty_fd,0,512,display))
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,display,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,display,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy VGA scan results\n");
+		cpu->max_legacy_dosmem_bits = lower;
+	}
+
+	/* extended memory aliasing. in case it differs from DOS memory, which it usually doesn't.
+	 * note we don't do this test if DOS memory testing reveals alising every 1MB. */
+	if (cpu->max_legacy_dosmem_bits > 20) {
+		unsigned char display[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		/* WARNING: we assume that the BIOS has something there.
+		 *          After all---that's where the real-mode interrupt table is supposed to be!
+		 *          There's something seriously wrong with a BIOS that leaves nothing there! */
+
+		if (!remote_rs232_read(stty_fd,0x100000,512,display))
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base+0x100000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,display,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = cpu->max_basic_memory_address_bits - 1;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base+0x100000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (memcmp(compare,display,512)) {
+				/* well, now it differs */
+				max_bits++;
+				break;
+			}
+
+			if (--max_bits <= 20) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy VGA scan results\n");
+		cpu->max_extmem_bits = lower;
+	}
+
+	fprintf(stderr,"ROM BIOS (topmost):   Matches %u/%u bits\n",cpu->max_upper_bios_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr,"ROM BIOS (legacy):    Matches %u/%u bits\n",cpu->max_legacy_bios_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr,"VGA (legacy):         Matches %u/%u bits\n",cpu->max_legacy_vga_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr,"DOS memory (legacy):  Matches %u/%u bits\n",cpu->max_legacy_dosmem_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr,"Extended memory:      Matches %u/%u bits\n",cpu->max_extmem_bits,cpu->max_basic_memory_address_bits);
 
 	return 0;
 }
@@ -909,6 +1243,8 @@ int main(int argc,char **argv) {
 	}
 	else {
 		if (run_tests(&cpu,stty_fd))
+			return 1;
+		if (run_memory_aliasing_tests(&cpu,stty_fd))
 			return 1;
 	}
 

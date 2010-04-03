@@ -190,8 +190,12 @@ entry:		cli
 		; CPU doesn't complain, it just pukes the state
 		; all over the real-mode interrupt vector table
 		; at 0x00000000 which then eventually causes a
-		; crash when we return to 8086 real mode.
-		; Eugh, even Bochs emulates that bug perfectly ;p
+		; crash when we return to 8086 real mode, as
+		; seen on every machine I've tested on.
+		; 
+		; What's scary is that Bochs and VirtualBox are
+		; both very good at emulating this quirk, so they
+		; crash too :P
 		mov		ax,TSS2_SEL
 		ltr		ax
 
