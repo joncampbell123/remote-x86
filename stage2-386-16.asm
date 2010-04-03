@@ -681,7 +681,11 @@ _jmp_386_16:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		call		com_str_out
 ; now switch into 386 protected mode
 		call		gen_gdt_386
-		sgdt		[cs:_gdtr_old]
+
+;		sgdt		[cs:_gdtr_old]
+		mov		word [cs:_gdtr_old+0],0xFFFF
+		mov		dword [cs:_gdtr_old+2],0
+
 		lgdt		[cs:_gdtr]
 		mov		eax,cr0
 		or		al,1			; switch on protected mode, 386 style

@@ -702,7 +702,11 @@ _jmp_286:	cli					; NO INTERRUPTS! We're not prepared to handle them
 		call		com_str_out
 ; now switch into 286 protected mode
 		call		gen_gdt_286
-		sgdt		[cs:_gdtr_old]
+
+;		sgdt		[cs:_gdtr_old]
+		mov		word [cs:_gdtr_old+0],0xFFFF
+		mov		dword [cs:_gdtr_old+2],0
+
 		lgdt		[cs:_gdtr]
 		smsw		ax
 		or		ax,1			; switch on protected mode, 286 style

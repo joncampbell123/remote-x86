@@ -537,7 +537,10 @@ _jmp_x64:	cli
 
 		sidt		[_idtr_realmode]
 
-		sgdt		[_gdtr_old]
+;		sgdt		[cs:_gdtr_old]
+		mov		word [_gdtr_old+0],0xFFFF
+		mov		dword [_gdtr_old+2],0
+
 		lgdt		[_gdtr]
 
 		mov		eax,0x00000001
