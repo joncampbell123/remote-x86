@@ -745,6 +745,42 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 #undef IDX
 	}
 
+	/* RDMSR */
+	if (cpu->cpuid.cpuid_1_df.f.msr) {
+#define EXCEPT 0
+#define EAX 1
+#define EDX 2
+#define IDX(x) (x*3)
+		uint32_t vals[0x20*3];
+		uint32_t results[0x10/4];
+		/* [0]   W    ECX before CPUID
+		 * [1] R      mask of exceptions that occured (bit 6=UD 13=GPF)
+		 * [2] R      EAX after
+		 * [3] R      EDX after */
+
+		if (!(sz=upload_code(stty_fd,"cpu/rdmsr_386-32.bin",0x40000)))
+			return 1;
+
+		for (y=0;y < 0x20;y++) {
+			results[0] = y;
+			results[1] = 0;	/* clear exceptions mask */
+			if (!remote_rs232_write(stty_fd,0x40000,4*2,(void*)(&results[0])))
+				return 1;	
+			if (!remote_rs232_exec_off(stty_fd,0x40000+0x10,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,0x40000,0x10,
+				(void*)(&results[0])))
+				return 1;
+
+			fprintf(stderr,"[0x%08X]: X=%08X A=%08X D=%08X\n",
+				results[0],results[1],results[2],results[3]);
+
+			vals[(y*3)+0] = results[1];
+			vals[(y*3)+1] = results[2];
+			vals[(y*3)+2] = results[3];
+		}
+	}
+
 	if (!remote_rs232_8086(stty_fd))
 		return 1;
 
