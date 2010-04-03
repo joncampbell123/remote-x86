@@ -1,4 +1,5 @@
 all: ../e_lib.a ../s_lib.a cpu_tests
+	make -C misc
 	make -C cpu
 
 ../e_lib.a:
@@ -11,6 +12,7 @@ cpu_tests: cpu_tests.c ../s_lib.a
 	gcc -o $@ $^
 
 clean:
+	make -C misc clean
 	make -C cpu clean
 	rm -f cpu_tests
 

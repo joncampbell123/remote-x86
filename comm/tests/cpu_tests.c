@@ -394,6 +394,49 @@ void init_x86_test_results(struct x86_test_results *r) {
 	memset(r,0,sizeof(*r));
 }
 
+int a20_enabled_mem_test(int stty_fd) {
+	unsigned char buf0[32],buf1[32],cross[64],zero[32];
+	unsigned int i;
+
+	if (!remote_rs232_read(stty_fd,0x300,32,buf0))			/* 0x600 */
+		return 0;
+	if (!remote_rs232_read(stty_fd,0x300|(1<<20),32,buf1))		/* 0x600 possible alias */
+		return 0;
+	if (!remote_rs232_read(stty_fd,0x100000-32,64,cross))		/* 64 bytes crossing 1MB boundary */
+		return 0;
+	if (!remote_rs232_read(stty_fd,0x0,32,zero))			/* first 32 bytes of all memory */
+		return 0;
+
+	fprintf(stderr,"A20 test\n");
+	fprintf(stderr,"  0x000300: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",buf0[i]); fprintf(stderr,"\n");
+	fprintf(stderr,"  0x100300: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",buf1[i]); fprintf(stderr,"\n");
+	fprintf(stderr,"  0x0FFFC0: "); for (i=0;i < 64;i++) fprintf(stderr,"%02X ",cross[i]); fprintf(stderr,"\n");
+	fprintf(stderr,"  0x000000: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",zero[i]); fprintf(stderr,"\n");
+
+	if (!memcmp(zero,cross+32,32))
+		return 0;
+
+	if (!memcmp(buf0,buf1,32)) {
+		fprintf(stderr,"Just to be sure...\n");
+
+		/* it might just be a coincidence, try writing to the memory and see if the alias shows it */
+		memset(buf0,'x',32);
+		if (!remote_rs232_write(stty_fd,0x300,32,buf0))
+			return 0;
+		if (!remote_rs232_read(stty_fd,0x300|(1<<20),32,buf1))
+			return 0;
+		if (!memcmp(buf0,buf1,32))
+			return 0;
+
+		fprintf(stderr,"  0x000300: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",buf0[i]); fprintf(stderr,"\n");
+		fprintf(stderr,"  0x100300: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",buf1[i]); fprintf(stderr,"\n");
+		fprintf(stderr,"  0x0FFFC0: "); for (i=0;i < 64;i++) fprintf(stderr,"%02X ",cross[i]); fprintf(stderr,"\n");
+		fprintf(stderr,"  0x000000: "); for (i=0;i < 32;i++) fprintf(stderr,"%02X ",zero[i]); fprintf(stderr,"\n");
+	}
+
+	return 1;
+}
+
 int run_tests(struct x86_test_results *cpu,int stty_fd) {
 	unsigned char buf[80*25*2];
 	int x,y,sz;
@@ -415,6 +458,12 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 	seg_alloc = (seg_alloc + sz + 0xF) & (~0xF);
 	seg_announce86_buffer = seg_alloc;
 	seg_alloc += 256;
+
+	/* the bootloader never shuts off the floppy motor and the BIOS isn't there
+	 * (when interrupts disabled) to timeout the floppy drive. */
+	if (!(sz=upload_code(stty_fd,"misc/shutoff_floppy_motor.bin",seg_alloc))) return 1;
+	if (!remote_rs232_exec_seg_off(stty_fd,seg_alloc>>4,0x0000,10))
+		return 1;
 
 	/* upload a program and run it */
 	if (!announce86_imm(stty_fd,"CPU tests commencing now. Be prepared\r\n")) return 1;
@@ -456,6 +505,43 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		fprintf(stderr,"EFLAGS rev=%u, CPUID=%u\n",
 				cpu->std0to4_eflags_revision,
 				cpu->has_cpuid);
+	}
+
+	/* switch into 286 16-bit mode */
+	if (!remote_rs232_8086(stty_fd))
+		return 1;
+	if (!remote_rs232_286(stty_fd))
+		return 1;
+
+	/* enable A20 */
+	if (!a20_enabled_mem_test(stty_fd)) {
+		fprintf(stderr,"A20 doesn't seem to be enabled\n");
+
+		if (!(sz=upload_code(stty_fd,"misc/a20_enable_fast.bin",seg_alloc))) return 1;
+		if (!remote_rs232_exec_off(stty_fd,seg_alloc,10))
+			return 1;
+
+		usleep(1000);
+	}
+
+	/* enable A20 */
+	{
+		unsigned int retry=3;
+
+		while (retry-- != 0 && !a20_enabled_mem_test(stty_fd)) {
+			fprintf(stderr,"A20 doesn't seem to be enabled\n");
+
+			if (!(sz=upload_code(stty_fd,"misc/a20_enable.bin",seg_alloc))) return 1;
+			if (!remote_rs232_exec_off(stty_fd,seg_alloc,10))
+				return 1;
+
+			usleep(50000);
+		}
+	}
+
+	if (!a20_enabled_mem_test(stty_fd)) {
+		fprintf(stderr,"A20 doesn't seem to be enabled\n");
+		return 1;
 	}
 
 	/* switch into 386 32-bit mode */
@@ -751,7 +837,8 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 #define EAX 1
 #define EDX 2
 #define IDX(x) (x*3)
-		uint32_t vals[0x20*3];
+		uint32_t vals[0x40*3];
+		uint32_t ext_vals[0x40*3];
 		uint32_t results[0x10/4];
 		/* [0]   W    ECX before CPUID
 		 * [1] R      mask of exceptions that occured (bit 6=UD 13=GPF)
@@ -761,23 +848,38 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		if (!(sz=upload_code(stty_fd,"cpu/rdmsr_386-32.bin",0x40000)))
 			return 1;
 
-		for (y=0;y < 0x20;y++) {
+		for (y=0;y < 0x40;y++) {
 			results[0] = y;
-			results[1] = 0;	/* clear exceptions mask */
-			if (!remote_rs232_write(stty_fd,0x40000,4*2,(void*)(&results[0])))
+			if (!remote_rs232_write(stty_fd,0x40000,4,(void*)(&results[0])))
 				return 1;	
 			if (!remote_rs232_exec_off(stty_fd,0x40000+0x10,10))
 				return 1;
-			if (!remote_rs232_read(stty_fd,0x40000,0x10,
-				(void*)(&results[0])))
+			if (!remote_rs232_read(stty_fd,0x40000,0x10,(void*)(&results[0])))
 				return 1;
 
-			fprintf(stderr,"[0x%08X]: X=%08X A=%08X D=%08X\n",
-				results[0],results[1],results[2],results[3]);
+			fprintf(stderr,"[0x%08X]: X=%08X D:A=%08X:%08X\n",
+				results[0],results[1],results[3],results[2]);
 
 			vals[(y*3)+0] = results[1];
 			vals[(y*3)+1] = results[2];
 			vals[(y*3)+2] = results[3];
+		}
+
+		for (y=0;y < 0x40;y++) {
+			results[0] = y + 0x80000000;
+			if (!remote_rs232_write(stty_fd,0x40000,4,(void*)(&results[0])))
+				return 1;	
+			if (!remote_rs232_exec_off(stty_fd,0x40000+0x10,10))
+				return 1;
+			if (!remote_rs232_read(stty_fd,0x40000,0x10,(void*)(&results[0])))
+				return 1;
+
+			fprintf(stderr,"[0x%08X]: X=%08X D:A=%08X:%08X\n",
+				results[0],results[1],results[3],results[2]);
+
+			ext_vals[(y*3)+0] = results[1];
+			ext_vals[(y*3)+1] = results[2];
+			ext_vals[(y*3)+2] = results[3];
 		}
 	}
 

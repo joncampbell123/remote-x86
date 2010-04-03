@@ -21,10 +21,15 @@ entry:		cli
 		sidt		[idtr]			; save debugger's
 		lidt		[idtr_new]		; load our own
 		mov		[saved_esp],esp
-		
-		mov		esi,[idtr_new+2]	; we want the IDT offset
+
+		; clear previous result
+		xor		eax,eax
+		mov		[except],eax
+		mov		[r_eax],eax
+		mov		[r_edx],eax
 
 		; modify INT 6, in case RDMSR is unsupported
+		mov		esi,[idtr_new+2]	; we want the IDT offset
 		add		esi,6*8
 		mov		ebx,ud_exception
 		mov		word [esi],bx
@@ -36,6 +41,7 @@ entry:		cli
 		mov		word [esi+6],bx
 
 		; modify INT 0xD, in case RDMSR causes a GPF
+		mov		esi,[idtr_new+2]	; we want the IDT offset
 		add		esi,13*8
 		mov		ebx,gpf_exception
 		mov		word [esi],bx
@@ -58,19 +64,19 @@ return_path:	lidt		[idtr]			; restore debugger's IDTR
 		ret
 
 		align		4
+saved_esp:	dd		0
 idtr:		dw		0,0,0,0
 idtr_new:	dw		0x7FF
 		dd		idt_table
 
+		align		4
 ud_exception:	or		dword [except],1 << 6
-		mov		dword [0xB8000],0x1E551E55	; UU
 		jmp		return_path
 
+		align		4
 gpf_exception:	or		dword [except],1 << 13
-		mov		dword [0xB8000],0x1E471E47	; GG
 		jmp		return_path
 
 		align		16
-saved_esp:	dd		0
 idt_table:
 

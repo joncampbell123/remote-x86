@@ -22,10 +22,17 @@ except:		dd		0
 entry:		cli
 		sidt		[idtr]			; save debugger's
 		lidt		[idtr_new]		; load our own
-		
-		mov		esi,[idtr_new+2]	; we want the IDT offset
+	
+		; clear previous result
+		xor		eax,eax
+		mov		[except],eax
+		mov		[r_eax],eax
+		mov		[r_ebx],eax
+		mov		[r_ecx],eax
+		mov		[r_edx],eax
 
 		; modify INT 6, in case CPUID is unsupported
+		mov		esi,[idtr_new+2]	; we want the IDT offset
 		add		esi,6*8
 		mov		ebx,ud_exception
 		mov		word [esi],bx

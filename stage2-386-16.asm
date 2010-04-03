@@ -131,7 +131,7 @@ _main_loop_command_8086:
 .fail:		ret
 
 ; EXEC command
-; EXEC <seg>:<off>
+; EXEC <off>
 ;  in this case, the "segment" value is a byte offset where the code segment starts
 _main_loop_command_exec:
 		cmp		word [si],'EX'
