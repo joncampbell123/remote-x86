@@ -183,6 +183,18 @@ entry:		cli
 		mov		dword [esi+0x60],0	; LDT
 		mov		dword [esi+0x64],0	; I/O bitmap T=0
 
+		; initialize the task register to the 2nd TSS
+		; so that when we jump to the first, the CPU
+		; will place it's state in a known location.
+		; if we don't... my testing reveals that the
+		; CPU doesn't complain, it just pukes the state
+		; all over the real-mode interrupt vector table
+		; at 0x00000000 which then eventually causes a
+		; crash when we return to 8086 real mode.
+		; Eugh, even Bochs emulates that bug perfectly ;p
+		mov		ax,TSS2_SEL
+		ltr		ax
+
 		; become ring-3
 		jmp		TSS_SEL:0		; through the task gate
 ring0_entry:
