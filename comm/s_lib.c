@@ -197,13 +197,17 @@ int remote_rs232_write(int fd,unsigned long long addr,unsigned int count,const u
 	unsigned int r = count;
 
 	while (r > 0) {
+#if 0 /* SLOW DOWN MODE FOR EMULATORS */
 		int wr = r; if (wr > 8) wr = 8;
+		usleep(20000);
+#else
+		const int wr = r;
+#endif
 		int wd = write(fd,p,wr);
 		if (wd == 0) return -1;
 		assert(wd <= r);
 		p += wd;
 		r -= wd;
-		usleep(20000);
 	}
 
 	if (remote_rs232_get_response(fd,line,sizeof(line),1000000) != 1) return 0;

@@ -487,7 +487,7 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		}
 	}
 
-	if (cpu->std0to4_eflags_revision >= 4) { /* 80486 or higher */
+	if (cpu->std0to4_eflags_revision >= 3) { /* 80486 or higher has Alignment Check exception. Just for testing, we attempt it on the 386 too */
 		uint32_t d;
 
 		/* cause #AC and note it */
@@ -501,15 +501,14 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		fprintf(stderr,"AC=0x%08lX\n",d);
 
 		if (d == 0) {
-			fprintf(stderr,"Awwww, AC never happened\n");
+			if (cpu->std0to4_eflags_revision >= 4) /* if it SHOULD have happened, then say so */
+				fprintf(stderr,"Awwww, AC never happened\n");
 		}
 		else if (d != 0x12345678) {
 			fprintf(stderr,"Corruption on readback\n");
 			return 1;
 		}
 		cpu->has_ac_exception = (d == 0x12345678);
-
-		return 1;
 	}
 
 	/* CPUID */
