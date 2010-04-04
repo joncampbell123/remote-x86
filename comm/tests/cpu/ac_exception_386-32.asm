@@ -10,6 +10,10 @@
 ; On the 486, this intentionally creates a situation where an
 ; Alignment Check exception would occur. We catch it, and note
 ; it where the host program can see the results.
+;
+; On the 386, this should cause no exception. The 386 doesn't
+; know what bit 18 in cr0 and bit 18 in EFLAGS is for. If it
+; does, then the CPU is some weird variant.
 		use32
 		org		0x40000
 
@@ -208,6 +212,10 @@ ring0_entry:
 		add		esi,TSS_SEL		;
 		mov		byte [esi+5],0x89|(3<<5) ; present, DPL=3, TSS, B=0
 
+		mov		esi,[gdtr+2]
+		add		esi,TSS2_SEL		;
+		mov		byte [esi+5],0x89|(3<<5) ; present, DPL=3, TSS, B=0
+
 		; NOW it is safe to enable AC
 		pushfd
 		pop		eax
@@ -234,15 +242,8 @@ ring0_return:
 
 		; done
 		lidt		[idtr]			; restore debugger's IDTR
-		mov		esp,[saved_esp]		; debugger's stack
+jump_out:	mov		esp,[saved_esp]		; debugger's stack
 		ret
-
-		align		4
-saved_esp:	dd		0
-gdtr:		dw		0,0,0,0
-idtr:		dw		0,0,0,0
-idtr_new:	dw		0x7FF
-		dd		idt_table
 
 ; ring-0 exception handler, reload registers and come back
 ac_exception:	mov		ax,DATA_SELECTOR
@@ -250,6 +251,15 @@ ac_exception:	mov		ax,DATA_SELECTOR
 		mov		es,ax
 		mov		dword [has],0x12345678
 		jmp		ring0_return
+
+		align		4
+saved_esp:	dd		0
+		align		8
+gdtr:		dw		0,0,0,0
+idtr:		dw		0,0,0,0
+		align		16
+idtr_new:	dw		0x7FF
+		dd		idt_table
 
 		align		16
 idt_table:

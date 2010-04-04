@@ -631,11 +631,9 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		fprintf(stderr,"POPAD_BUG=0x%08lX\n",d);
 	}
 
-/*========================================= 80486 or higher beyond this point ===============================*/
-	if (cpu->std0to4_eflags_revision < 4)
-		return 0;
-
 	/* cause #AC and note it */
+	/* On a 386, this check should not cause any exception whatsoever.
+	 * So we execute it here, rather than in the 486+ section. */
 	if (!(sz=upload_code(stty_fd,"cpu/ac_exception_386-32.bin",0x40000)))
 		return 1;
 	if (!remote_rs232_exec_off(stty_fd,0x40000+4,10))
@@ -654,6 +652,10 @@ int run_tests(struct x86_test_results *cpu,int stty_fd) {
 		return 1;
 	}
 	cpu->has_ac_exception = (d == 0x12345678);
+
+/*========================================= 80486 or higher beyond this point ===============================*/
+	if (cpu->std0to4_eflags_revision < 4)
+		return 0;
 
 /*======== TEST: If CPUID is present, read off the basic CPUID info */
 	if (cpu->has_cpuid) {
