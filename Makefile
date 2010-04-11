@@ -55,10 +55,10 @@ grubboot.img: grubboot.sys
 	rm -Rf /tmp/remgr
 
 grubboot.sys: grubboot.o
-	ld -static --nmagic -Ttext 0x100000 -o $@ --oformat elf32-i386 grubboot.o
+	$(LD_32) -m elf_i386 --oformat elf32-i386 -A i386 -static --nmagic -Ttext 0x100000 -o $@ grubboot.o
 
 grubboot.o: grubboot.S stage2-recomm.bin
-	gcc -nostdlib -nostdinc -c -o $@ grubboot.S
+	$(CC_32) -nostdlib -nostdinc -c -o $@ grubboot.S
 
 
 
