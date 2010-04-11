@@ -166,10 +166,15 @@ struct x86_test_results {
 	unsigned int	max_basic_memory_address_bits;
 	unsigned int	max_address_pins;		/* if we know the CPU model, how many actual CPU address pins there are */
 	unsigned int	max_upper_bios_bits;		/* number of bits decoded for the upper ROM BIOS area (4GB-1) */
+	unsigned int	max_upper_bios_bits_uw;		/* number of bits decoded for the upper ROM BIOS area (4GB-1) */
 	unsigned int	max_legacy_bios_bits;		/* number of bits decoded for the legacy ROM BIOS area (0xF0000-0xFFFFF) */
+	unsigned int	max_legacy_bios_bits_uw;	/* number of bits decoded for the legacy ROM BIOS area (0xF0000-0xFFFFF) */
 	unsigned int	max_legacy_vga_bits;		/* number of bits decoded for the VGA display area (0xB8000-0xB8FFF) */
+	unsigned int	max_legacy_vga_bits_uw;		/* number of bits decoded for the VGA display area (0xB8000-0xB8FFF) */
 	unsigned int	max_legacy_dosmem_bits;		/* number of bits decoded for the "DOS" area (first 1MB) */
+	unsigned int	max_legacy_dosmem_bits_uw;	/* number of bits decoded for the "DOS" area (first 1MB) */
 	unsigned int	max_extmem_bits;		/* number of bits decoded for extended memory (beyond the first 1MB) */
+	unsigned int	max_extmem_bits_uw;		/* number of bits decoded for extended memory (beyond the first 1MB) */
 
 	/* CPUID */
 	struct cpuid {
@@ -999,6 +1004,33 @@ int run_memory_aliasing_tests(struct x86_test_results *cpu,int stty_fd) {
 
 		cpu->max_upper_bios_bits = max_bits;
 	}
+	{
+		unsigned char hirom[512],compare[512];
+		uint64_t max = (1ULL << 21LL) - 1ULL;
+		unsigned int max_bits = 21;
+		if (!remote_rs232_read(stty_fd,(1ULL << 20ULL) - 512ULL,512,hirom))
+			return 1;
+
+		/* start scanning and comparing */
+		while (1) {
+			if (!remote_rs232_read(stty_fd,max + 1ULL - 512ULL,512,compare))
+				return 1;
+			if (!memcmp(compare,hirom,512)) {
+				max_bits--;
+				max >>= 1;
+				break;
+			}
+
+			max = (max << 1ULL) | 1ULL;
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				max = max_basic_mem_address;
+				break;
+			}
+		}
+
+		cpu->max_upper_bios_bits_uw = max_bits;
+	}
 
 	/* ROM aliasing test (legacy ROM BIOS region).
 	 * in newer machines this is either the last 64KB-128KB of the actual ROM, a
@@ -1051,6 +1083,48 @@ int run_memory_aliasing_tests(struct x86_test_results *cpu,int stty_fd) {
 
 		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy BIOS scan results\n");
 		cpu->max_legacy_bios_bits = lower;
+	}
+	{
+		unsigned char legrom[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		if (!remote_rs232_read(stty_fd,0x100000 - 512,512,legrom))	/* 512 back from the 1MB boundary */
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base + 0x100000 - 512ULL,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base + 0x100000 - 512ULL,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"Hmm, inconsistent results from legacy BIOS scan (upper=%u lower=%u)\n",upper,lower);
+		cpu->max_legacy_bios_bits_uw = lower;
 	}
 
 	/* VGA legacy display aliasing. Assuming the BIOS left the VGA display in mode 3, we
@@ -1105,6 +1179,48 @@ int run_memory_aliasing_tests(struct x86_test_results *cpu,int stty_fd) {
 		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy VGA scan results\n");
 		cpu->max_legacy_vga_bits = lower;
 	}
+	{
+		unsigned char legrom[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		if (!remote_rs232_read(stty_fd,0xB8000,512,legrom))	/* 512 back from the 1MB boundary */
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base + 0xB8000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base + 0xB8000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"Hmm, inconsistent results from VGA BIOS scan (upper=%u lower=%u)\n",upper,lower);
+		cpu->max_legacy_vga_bits_uw = lower;
+	}
 
 	/* DOS memory aliasing. Perhaps some motherboards treat this range separately. Most likely not, but
 	 * it's fun to look for weird flaws like that */
@@ -1157,8 +1273,50 @@ int run_memory_aliasing_tests(struct x86_test_results *cpu,int stty_fd) {
 		}
 		lower = max_bits;
 
-		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy VGA scan results\n");
+		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent DOS memory scan results\n");
 		cpu->max_legacy_dosmem_bits = lower;
+	}
+	{
+		unsigned char legrom[512],compare[512];
+		unsigned int max_bits,upper,lower;
+
+		if (!remote_rs232_read(stty_fd,0,512,legrom))	/* 512 back from the 1MB boundary */
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"Hmm, inconsistent results from DOS memory scan (upper=%u lower=%u)\n",upper,lower);
+		cpu->max_legacy_dosmem_bits_uw = lower;
 	}
 
 	/* extended memory aliasing. in case it differs from DOS memory, which it usually doesn't.
@@ -1215,12 +1373,62 @@ int run_memory_aliasing_tests(struct x86_test_results *cpu,int stty_fd) {
 		if (upper != lower) fprintf(stderr,"WARNING: Inconsistent legacy VGA scan results\n");
 		cpu->max_extmem_bits = lower;
 	}
+	{
+		unsigned char legrom[512],compare[512];
+		unsigned int max_bits,upper,lower;
 
-	fprintf(stderr,"ROM BIOS (topmost):   Matches %u/%u bits\n",cpu->max_upper_bios_bits,cpu->max_basic_memory_address_bits);
-	fprintf(stderr,"ROM BIOS (legacy):    Matches %u/%u bits\n",cpu->max_legacy_bios_bits,cpu->max_basic_memory_address_bits);
-	fprintf(stderr,"VGA (legacy):         Matches %u/%u bits\n",cpu->max_legacy_vga_bits,cpu->max_basic_memory_address_bits);
-	fprintf(stderr,"DOS memory (legacy):  Matches %u/%u bits\n",cpu->max_legacy_dosmem_bits,cpu->max_basic_memory_address_bits);
-	fprintf(stderr,"Extended memory:      Matches %u/%u bits\n",cpu->max_extmem_bits,cpu->max_basic_memory_address_bits);
+		if (!remote_rs232_read(stty_fd,0x100000,512,legrom))	/* 512 back from the 1MB boundary */
+			return 1;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = ((~0ULL) << max_bits) & max_basic_mem_address;
+			if (!remote_rs232_read(stty_fd,alias_base+0x100000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		upper = max_bits;
+
+		/* start scanning and comparing */
+		max_bits = 21;
+		while (1) {
+			uint64_t alias_base = 1ULL << max_bits;
+			if (!remote_rs232_read(stty_fd,alias_base+0x100000,512,compare)) /* 512 back from any alias of the 1MB boundary */
+				return 1;
+			if (!memcmp(compare,legrom,512))
+				break;
+
+			if (++max_bits >= 32) { /* it probably doesn't alias at all if we got this far */
+				max_bits = cpu->max_basic_memory_address_bits;
+				break;
+			}
+		}
+		lower = max_bits;
+
+		if (upper != lower) fprintf(stderr,"Hmm, inconsistent results from extended memory scan (upper=%u lower=%u)\n",upper,lower);
+		cpu->max_extmem_bits_uw = lower;
+	}
+
+	fprintf(stderr,"Downward scan:\n");
+	fprintf(stderr," ROM BIOS (topmost):   Matches %u/%u bits\n",cpu->max_upper_bios_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," ROM BIOS (legacy):    Matches %u/%u bits\n",cpu->max_legacy_bios_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," VGA (legacy):         Matches %u/%u bits\n",cpu->max_legacy_vga_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," DOS memory (legacy):  Matches %u/%u bits\n",cpu->max_legacy_dosmem_bits,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," Extended memory:      Matches %u/%u bits\n",cpu->max_extmem_bits,cpu->max_basic_memory_address_bits);
+
+	fprintf(stderr,"Upward scan:\n");
+	fprintf(stderr," ROM BIOS (topmost):   Matches %u/%u bits\n",cpu->max_upper_bios_bits_uw,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," ROM BIOS (legacy):    Matches %u/%u bits\n",cpu->max_legacy_bios_bits_uw,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," VGA (legacy):         Matches %u/%u bits\n",cpu->max_legacy_vga_bits_uw,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," DOS memory (legacy):  Matches %u/%u bits\n",cpu->max_legacy_dosmem_bits_uw,cpu->max_basic_memory_address_bits);
+	fprintf(stderr," Extended memory:      Matches %u/%u bits\n",cpu->max_extmem_bits_uw,cpu->max_basic_memory_address_bits);
 
 	return 0;
 }
