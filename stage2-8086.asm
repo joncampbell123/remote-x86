@@ -96,7 +96,23 @@ ask_loop:
 		xor		al,al			; set all bits to zero
 		out		dx,al
 
-		jmp		_main_loop
+		cli
+
+; if we're not running from segment 0, we need to move ourself there now
+		mov		ax,cs
+		or		ax,ax
+		jz		_main_loop
+
+		mov		ds,ax
+		xor		ax,ax
+		mov		es,ax
+		mov		si,0x8000
+		mov		di,0x8000
+		mov		cx,last_byte-0x8000
+		shr		cx,1
+		cld
+		rep		movsw
+		jmp		0x0000:0x8000		; copy ourself from CS:0x8000 to 0x0000:0x8000 and jump there
 
 ; main loop
 _main_loop:	cli					; keep interrupts disabled

@@ -17,10 +17,22 @@ clean:
 
 include Makefile.inc
 
-all: floppy.bin cdrom.iso
+all: floppy.bin cdrom.iso dosboot.com dosboot.com.img
 ifneq ($(LD_64),)
 all: floppy-x64.bin cdrom-x64.iso
 endif
+
+
+
+dosboot.com: dosboot.asm stage2-8086.asm
+	nasm -o $@ -f bin dosboot.asm
+
+dosboot.com.img: dosboot.com
+	dd if=/dev/zero of=$@ bs=512 count=2880
+	mkfs.vfat -F 12 -r 16 $@ 1440
+	mcopy -i dosboot.com.img dosboot.com ::dosboot.com
+
+
 
 stage1-floppy.bin: stage1-floppy.asm
 	nasm -o $@ -f bin $<

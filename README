@@ -62,6 +62,13 @@ locations (COM1 on 0x3F8, etc). Most pre-Pentium II laptops made
 prior to 1999 and almost all desktops have this, so it should be
 workable. If not, see the alternative versions below.
 
+    If a floppy disk is not a viable option for booting (such as:
+laptops where the floppy is missing or broken), alternative methods
+are provided:
+
+    dosboot.com        Kick DOS out of memory, bring up debugger
+    grubboot           GRUB multiboot image containing this debugger
+
 ----------------------------------------------------------------
 
 Ethernet build: (eth)
