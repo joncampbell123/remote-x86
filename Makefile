@@ -13,7 +13,7 @@ clean:
 	find -name \*~ -delete
 	make -C comm clean
 	make -C eth clean
-	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo
+	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo dosboot.com dosboot.com.img
 
 include Makefile.inc
 
