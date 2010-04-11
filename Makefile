@@ -24,17 +24,20 @@ endif
 
 
 
-dosboot.com: dosboot.asm stage2.bin
+dosboot.com: dosboot.asm stage2-recomm.bin
 ifneq ($(LD_64),)
 dosboot.com: stage2-x64.bin
 endif
 
-dosboot.com:
 ifneq ($(LD_64),)
+stage2-recomm.bin: stage2.bin stage2-x64.bin
 	ln -fs stage2-x64.bin stage2-recomm.bin
 else
+stage2-recomm.bin: stage2.bin
 	ln -fs stage2.bin stage2-recomm.bin
 endif
+
+dosboot.com:
 	nasm -o $@ -f bin dosboot.asm
 
 dosboot.com.img: dosboot.com
@@ -54,8 +57,8 @@ grubboot.img: grubboot.sys
 grubboot.sys: grubboot.o
 	ld -static --nmagic -Ttext 0x100000 -o $@ --oformat elf32-i386 grubboot.o
 
-grubboot.o: grubboot.S
-	gcc -nostdlib -nostdinc -c -o $@ $<
+grubboot.o: grubboot.S stage2-recomm.bin
+	gcc -nostdlib -nostdinc -c -o $@ grubboot.S
 
 
 
