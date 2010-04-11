@@ -65,6 +65,6 @@ okay:		db	13,10
 
 		align	16
 payload:
-incbin		"stage2.bin"		; assumption: any machine that needs DOS as a bootloader probably can't do x86-64
+incbin		"stage2-recomm.bin"
 payload_end:
 

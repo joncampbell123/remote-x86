@@ -13,24 +13,49 @@ clean:
 	find -name \*~ -delete
 	make -C comm clean
 	make -C eth clean
-	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo dosboot.com dosboot.com.img
+	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo dosboot.com dosboot.com.img grubboot.sys grubboot.img
 
 include Makefile.inc
 
-all: floppy.bin cdrom.iso dosboot.com dosboot.com.img
+all: floppy.bin cdrom.iso dosboot.com dosboot.com.img grubboot.sys grubboot.img
 ifneq ($(LD_64),)
 all: floppy-x64.bin cdrom-x64.iso
 endif
 
 
 
-dosboot.com: dosboot.asm stage2-8086.asm
+dosboot.com: dosboot.asm stage2.bin
+ifneq ($(LD_64),)
+dosboot.com: stage2-x64.bin
+endif
+
+dosboot.com:
+ifneq ($(LD_64),)
+	ln -fs stage2-x64.bin stage2-recomm.bin
+else
+	ln -fs stage2.bin stage2-recomm.bin
+endif
 	nasm -o $@ -f bin dosboot.asm
 
 dosboot.com.img: dosboot.com
 	dd if=/dev/zero of=$@ bs=512 count=2880
 	mkfs.vfat -F 12 -r 16 $@ 1440
 	mcopy -i dosboot.com.img dosboot.com ::dosboot.com
+
+
+grubboot.img: grubboot.sys
+	rm -Rf /tmp/remgr
+	mkdir -p /tmp/remgr/boot/grub
+	cp -v grubboot.sys /tmp/remgr/boot
+	cp -v grubboot.cfg /tmp/remgr/boot/grub/grub.cfg
+	grub-mkrescue --image-type=floppy --overlay=/tmp/remgr $@
+	rm -Rf /tmp/remgr
+
+grubboot.sys: grubboot.o
+	ld -static --nmagic -Ttext 0x100000 -o $@ --oformat elf32-i386 grubboot.o
+
+grubboot.o: grubboot.S
+	gcc -nostdlib -nostdinc -c -o $@ $<
 
 
 
