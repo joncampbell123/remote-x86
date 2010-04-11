@@ -27,6 +27,46 @@ doit:		mov	dx,okay
 		mov	ah,9
 		int	21h
 
+; make sure that our segment is far enough away from the DOS kernel.
+; testing shows that if we're too close, our jump to the code never
+; makes it and we crash, or the stage2 overwrites itself at the
+; instruction pointer when it moves itself downward. This can happen
+; for example if you make a Windows 95 bootdisk with absolutely no
+; drivers or TSRs active, segment values as low as 0xA00 are possible.
+		mov	ax,cs
+		cmp	ax,0x1000
+		jae	seg_ok
+
+; we're too low in memory, we need to copy ourself and run from a higher
+; memory address. copy ourself 64K higher into memory. again, DOS gives
+; COM programs all system memory until further notice, so stomping on
+; something else is not a problem unless you are severely restricted
+; in available DOS memory
+		mov	ds,ax
+		add	ax,0x1000
+		mov	es,ax
+		xor	si,si
+		mov	di,si
+		mov	cx,payload_end		; damn you NASM I wish I could write payload_end>>1 and REP MOVSW :(
+		cld
+		rep	movsb
+		
+		push	es
+		mov	ax,seg_ok
+		push	ax
+		retf				; jump to the new segment
+
+seg_ok:
+; make sure the data following the image is zeroed.
+; don't worry, DOS allocates all memory to the current program by default,
+; this is unlikely to stomp on anything unless you're severely out of memory
+		mov	ax,cs
+		mov	es,ax
+		mov	di,payload_end
+		xor	ax,ax
+		mov	cx,2048
+		rep	stosw
+
 ; execute it.
 ; Most of the payload is written to execute from 0x0000:0x8000
 ; but the initial part that prompts the user, by design, will
