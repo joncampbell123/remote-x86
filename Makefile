@@ -17,7 +17,7 @@ clean:
 
 include Makefile.inc
 
-all: floppy.bin cdrom.iso dosboot.com dosboot.com.img grubboot.sys grubboot.img
+all: floppy.bin cdrom.iso dosboot.com dosboot.com.img grubboot.sys
 ifneq ($(LD_64),)
 all: floppy-x64.bin cdrom-x64.iso
 endif
@@ -46,13 +46,6 @@ dosboot.com.img: dosboot.com
 	mcopy -i dosboot.com.img dosboot.com ::dosboot.com
 
 
-grubboot.img: grubboot.sys
-	rm -Rf /tmp/remgr
-	mkdir -p /tmp/remgr/boot/grub
-	cp -v grubboot.sys /tmp/remgr/boot
-	cp -v grubboot.cfg /tmp/remgr/boot/grub/grub.cfg
-	grub-mkrescue --image-type=floppy --overlay=/tmp/remgr $@
-	rm -Rf /tmp/remgr
 
 grubboot.sys: grubboot.o
 	$(LD_32) -m elf_i386 --oformat elf32-i386 -A i386 -static --nmagic -Ttext 0x100000 -o $@ grubboot.o
