@@ -15,6 +15,9 @@ clean:
 	make -C eth clean
 	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo dosboot.com dosboot.com.img grubboot.sys grubboot.img
 
+release:
+	zip -9 release.zip *.iso *.com *.bin *.sys
+
 include Makefile.inc
 
 all: floppy.bin cdrom.iso dosboot.com dosboot.com.img grubboot.sys
