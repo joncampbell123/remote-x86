@@ -13,7 +13,7 @@ clean:
 	find -name \*~ -delete
 	make -C comm clean
 	make -C eth clean
-	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo dosboot.com dosboot.com.img grubboot.sys grubboot.img
+	rm -f Makefile.inc Makefile.inc.sh Makefile.shinfo dosboot.com dosboot.com.img grubboot.sys grubboot.img release.zip
 
 release:
 	zip -9 release.zip *.iso *.com *.bin *.sys
